@@ -1,0 +1,36 @@
+exclude: ^(data/|tests/)
+default_language_version:
+    python: python3.10
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+    -   id: check-added-large-files
+    -   id: debug-statements
+    -   id: check-case-conflict
+    -   id: check-yaml
+    -   id: check-toml
+    -   id: end-of-file-fixer
+    -   id: trailing-whitespace
+-   repo: https://github.com/pycqa/isort
+    rev: 5.11.2
+    hooks:
+      - id: isort
+-   repo: https://github.com/psf/black
+    rev: 22.12.0
+    hooks:
+      - id: black
+-   repo: https://github.com/PyCQA/flake8
+    rev: 6.0.0
+    hooks:
+    -   id: flake8
+        args:
+        - "--max-line-length=100"
+        - "--max-complexity=15"
+        - "--extend-ignore=E203"
+        additional_dependencies:
+        - flake8-bugbear
+        - flake8-builtins
+        - flake8-comprehensions
+        - flake8-simplify
+        - pep8-naming

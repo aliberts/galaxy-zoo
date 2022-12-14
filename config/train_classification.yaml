@@ -1,0 +1,59 @@
+test: False
+task: classification
+evaluate: False
+exp: null
+wandb:
+  use: True
+  entity: aliberts
+  project: galaxy-zoo
+  run-name: null
+  tags:  # wandb tags for experiments identification
+    - baseline
+    - model exploration
+  note: null
+  freq: 10
+dataset:
+  name: 'galaxy-zoo'
+  dir: /home/simon/datasets/galaxy_zoo/
+  images: images_training_rev1/
+  train-labels: classification_labels_train_val.csv
+  test-labels: classification_labels_test.csv
+seed: null          # seed for initializing training.
+epochs: 90
+start-epoch: 0   # manual epoch number (useful on restarts)
+use-cuda: True
+workers: 8        # number of data loading workers
+batch-size: 128  # mini-batch size, this is the total
+      # batch size of all GPUs on the current node when
+      # using Data Parallel or Distributed Data Parallel
+model:
+  arch: resnet18   # model architecture, 'resnetN' or 'customN' supported
+  pretrained: False  # use pre-trained model
+  freeze: False
+  output-constraints: True
+optimizer:
+  name: adam
+  lr: 3.e-4  # https://twitter.com/karpathy/status/801621764144971776
+  lr-scheduler-freq: 30  # lr is divided by a factor of 10 each this number of epochs
+  weight-decay: 1.e-4
+  # name: sgd
+  # lr: 1.e-2
+  # lr-scheduler-freq: 30  # lr is divided by a factor of 10 each this number of epochs
+  # weight-decay: 1.e-4
+  # momentum: 0.9  # for SGD only
+preprocess:
+  augmentation: True
+  rotate: True
+  flip: True
+  colorjitter: True
+print-freq: 10
+resume: ''         # path to latest checkpoint
+world-size: -1     # number of nodes for distributed training
+rank: -1      # node rank for distributed training
+dist-url: tcp://224.66.41.62:23456  # url used to set up distributed training
+dist-backend: nccl  # distributed backend
+gpu: null     # GPU id to use.
+multiprocessing-distributed: False  # Use multi-processing distributed training to launch
+                        #  N processes per node, which has N GPUs. This is the
+                        #  fastest way to use PyTorch for either single node or
+                        #  multi node data parallel training

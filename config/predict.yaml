@@ -1,0 +1,35 @@
+test: True
+task: classification
+dataset:
+  name: 'galaxy-zoo'
+  dir: /home/simon/datasets/galaxy_zoo/
+  # dir: example/
+  images: images_test_rev1
+  train-labels: classification_labels_train_val.csv
+  test-labels: classification_labels_test.csv
+  predictions: predictions/training_solutions_rev1.csv
+use-cuda: True
+seed: 0          # seed for initializing training.
+workers: 8       # number of data loading workers
+batch-size: 128  # mini-batch size, this is the total
+      # batch size of all GPUs on the current node when
+      # using Data Parallel or Distributed Data Parallel
+print-freq: 10
+model:
+  arch: 'resnet18'
+  path: null  # path to model
+  output-constraints: True
+ensembling:
+  enable: False
+  n-estimators: 50
+template: "all_ones_benchmark.csv"
+output: "predictions/predictions.csv"
+world-size: -1     # number of nodes for distributed training
+rank: -1      # node rank for distributed training
+dist-url: tcp://224.66.41.62:23456  # url used to set up distributed training
+dist-backend: nccl  # distributed backend
+gpu: null     # GPU id to use.
+multiprocessing-distributed: False  # Use multi-processing distributed training to launch
+                        #  N processes per node, which has N GPUs. This is the
+                        #  fastest way to use PyTorch for either single node or
+                        #  multi node data parallel training
