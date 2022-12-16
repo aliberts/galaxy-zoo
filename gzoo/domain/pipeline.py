@@ -23,7 +23,7 @@ def build_train(opt, ngpus_per_node):
         train_dataset = GalaxyTrainSet("train", opt)
         val_dataset = GalaxyTrainSet("val", opt)
 
-    if opt.distributed:
+    if opt.distribute:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     else:
         train_sampler = None
@@ -51,10 +51,10 @@ def build_train(opt, ngpus_per_node):
         n_samples = [8014, 7665, 550, 3708, 7416]
         # weights = [max(n_samples) / x for x in n_samples]
         weights = [1.0 - x / sum(n_samples) for x in n_samples]
-        weights = torch.FloatTensor(weights).cuda(opt.gpu)
-        criterion = nn.CrossEntropyLoss(weight=weights).cuda(opt.gpu)
+        weights = torch.FloatTensor(weights).cuda(opt.distributed.gpu)
+        criterion = nn.CrossEntropyLoss(weight=weights).cuda(opt.distributed.gpu)
     elif opt.exp.task == "regression":
-        criterion = RMSELoss().cuda(opt.gpu)
+        criterion = RMSELoss().cuda(opt.distributed.gpu)
 
     if opt.model.arch == "random":
         optimizer = None
@@ -69,7 +69,7 @@ def build_train(opt, ngpus_per_node):
         )
 
     # optionally resume from a checkpoint
-    if opt.resume:
+    if opt.compute.resume:
         model, optimizer = resume_from_checkpoint(opt, model, optimizer)
 
     cudnn.benchmark = True
@@ -91,9 +91,9 @@ def build_eval(opt, ngpus_per_node):
     )
     # Make loss function and optimizer
     if opt.exp.task == "classification":
-        criterion = nn.CrossEntropyLoss().cuda(opt.gpu)
+        criterion = nn.CrossEntropyLoss().cuda(opt.distributed.gpu)
     elif opt.exp.task == "regression":
-        criterion = RMSELoss().cuda(opt.gpu)
+        criterion = RMSELoss().cuda(opt.distributed.gpu)
 
     cudnn.benchmark = True
     return model, test_loader, criterion
@@ -115,24 +115,24 @@ def save_checkpoint(log_dir, state, model, is_best, opt):
 
 
 def resume_from_checkpoint(opt, model, optimizer):
-    if not osp.isfile(opt.resume):
-        raise FileNotFoundError(f"=> no checkpoint found at '{opt.resume}'")
+    if not osp.isfile(opt.compute.resume):
+        raise FileNotFoundError(f"=> no checkpoint found at '{opt.compute.resume}'")
 
-    print(f"=> loading checkpoint '{opt.resume}'")
-    if opt.gpu is None:
-        checkpoint = torch.load(opt.resume)
+    print(f"=> loading checkpoint '{opt.compute.resume}'")
+    if opt.distributed.gpu is None:
+        checkpoint = torch.load(opt.compute.resume)
     else:
         # Map model to be loaded to specified single gpu.
-        loc = f"cuda:{opt.gpu}"
-        checkpoint = torch.load(opt.resume, map_location=loc)
+        loc = f"cuda:{opt.distributed.gpu}"
+        checkpoint = torch.load(opt.compute.resume, map_location=loc)
     opt.compute.start_epoch = checkpoint["epoch"]
     best_score = checkpoint["best_score"]
-    if opt.gpu is not None:
+    if opt.distributed.gpu is not None:
         # best_score may be from a checkpoint from a different GPU
-        best_score = best_score.to(opt.gpu)
+        best_score = best_score.to(opt.distributed.gpu)
     model.load_state_dict(checkpoint["state_dict"])
     optimizer.load_state_dict(checkpoint["optimizer"])
-    print(f"=> loaded checkpoint '{opt.resume}' (epoch {checkpoint['epoch']})")
+    print(f"=> loaded checkpoint '{opt.compute.resume}' (epoch {checkpoint['epoch']})")
 
     return model, optimizer
 

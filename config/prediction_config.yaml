@@ -1,0 +1,36 @@
+compute:
+  batch_size: 128
+  epochs: 90
+  print_freq: 10
+  resume: null
+  seed: null
+  start_epoch: 0
+  use_cuda: true
+  workers: 8
+dataset:
+  dir: example
+  images: images_training_rev1/
+  name: galaxy-zoo
+  predictions: predictions/training_solutions_rev1.csv
+  test_labels: classification_labels_test.csv
+  train_labels: classification_labels_train_val.csv
+distributed:
+  dist_backend: nccl
+  dist_url: tcp://224.66.41.62:23456
+  gpu: null
+  multiprocessing_distributed: false
+  rank: -1
+  world_size: -1
+exp:
+  evaluate: false
+  name: null
+  task: classification
+  test: false
+model:
+  arch: resnet18
+  freeze: false
+  output_constraints: true
+  path: null
+  pretrained: false
+output: predictions/predictions.csv
+template: all_ones_benchmark.csv

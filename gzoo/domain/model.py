@@ -29,11 +29,11 @@ def load_model(opt, model):
     if not opt.compute.use_cuda:
         checkpoint = torch.load(pth, map_location=torch.device("cpu"))
         model = nn.DataParallel(model)
-    elif opt.gpu is None:
+    elif opt.distributed.gpu is None:
         checkpoint = torch.load(pth)
     else:
         # Map model to be loaded to specified single gpu.
-        loc = f"cuda:{opt.gpu}"
+        loc = f"cuda:{opt.distributed.gpu}"
         checkpoint = torch.load(pth, map_location=loc)
 
     model.load_state_dict(checkpoint["state_dict"])
