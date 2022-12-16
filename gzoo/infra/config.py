@@ -79,6 +79,7 @@ class OptimizerConfig:
     lr: float = 3.0e-4  # https://twitter.com/karpathy/status/801621764144971776
     lr_scheduler_freq: int = 30  # lr is divided by a factor of 10 each this number of epochs
     weight_decay: float = 1.0e-4
+    momentum: float = 0.9  # for SGD only
 
 
 @dataclass

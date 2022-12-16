@@ -32,11 +32,11 @@ val_example_ct = 0
 val_batch_ct = 0
 
 
-@pyrallis.wrap(config_path="config/train_config.yaml")
+@pyrallis.wrap(config_path="config/train.yaml")
 def main(opt: TrainConfig):
 
-    # to update the config file, uncomment this line
-    # pyrallis.dump(opt, open('config/train_config.yaml','w'))
+    # To update the config file, uncomment this line
+    # pyrallis.dump(opt, open('config/train.yaml','w'))
 
     if opt.wandb.use:
         wandb.login()

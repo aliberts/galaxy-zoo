@@ -84,23 +84,23 @@ required arguments:
 
 ## Run the classification pipeline:
 ```bash
-poetry run python -m gzoo.app.train -o config/train_classification.yaml
+poetry run python -m gzoo.app.train
 ```
 script option:
-- `-o`: specify the `.yaml`config file to read options from.
-Every run config option should be listed in this file (the default file for this is [config/train_classification.yaml](config/train_classification.yaml)) and every option in the `yaml` file can be overloaded *on the fly* at the command line.
+- `--config_path`: specify the `.yaml` config file to read options from.
+Every run config option should be listed in this file (the default file for this is [config/train.yaml](config/train.yaml)) and every option in the `yaml` file can be overloaded *on the fly* at the command line.
 
 For instance, if you are fine with the values in the `yaml` config file but you just want to change the `epochs` number, you can either change it in the config file *or* you can directly run:
 ```bash
-poetry run python -m gzoo.app.evaluate -o config/train.yaml --epochs 50
+poetry run python -m gzoo.app.train --compute.epochs=50
 ```
 This will use all config values from `config/train.yaml` except the number of epochs which will be set to `50`.
 
 main run options:
-- `--seed`: seed for initializing training. (default: `None`)
-- `--epochs`: total number of epochs (default: `90`)
-- `--batch-size`: batch size (default: `256`)
-- `--workers`: number of threads (default: `4`)
+- `--compute.seed`: seed for deterministic training. (default: `None`)
+- `--compute.epochs`: total number of epochs (default: `90`)
+- `--compute.batch-size`: batch size (default: `128`)
+- `--compute.workers`: number of threads (default: `8`)
 - `--model.arch`: model architecture to be used(default: `resnet18`)
 - `--model.pretrained`: use pre-trained model (default: `False`)
 - `--optimizer.lr`: optimizer learning rate (default: `3.e-4` with Adam)
@@ -110,12 +110,12 @@ main run options:
 
 # Predict
 ```bash
-poetry run python -m gzoo.app.predict -o config/predict.yaml
+poetry run python -m gzoo.app.predict
 ```
 Config works the same way as for training, default config is at [config/predict.yaml](config/predict.yaml).
 The `dataset` directory specified in the config must contain an `images_test_rev1` folder that contains itself the images to predict, as well as the `all_ones_benchmark.csv` output template from the Kaggle project's data sources.
 
 A 1-image example is provided which you can run with:
 ```bash
-poetry run python -m gzoo.app.predict -o config/predict.yaml --dataset.dir=example/
+poetry run python -m gzoo.app.predict --dataset.dir=example/
 ```

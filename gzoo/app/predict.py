@@ -18,11 +18,11 @@ from gzoo.infra.config import PredictConfig
 from gzoo.infra.utils import AverageMeter, ProgressMeter
 
 
-@pyrallis.wrap(config_path="config/prediction_config.yaml")
+@pyrallis.wrap(config_path="config/predict.yaml")
 def main(opt: PredictConfig):
 
-    # to update the config file, uncomment this line
-    # pyrallis.dump(opt, open("config/prediction_config.yaml","w"))
+    # To update the config file, uncomment this line
+    # pyrallis.dump(opt, open("config/predict.yaml","w"))
 
     if opt.compute.seed is not None:
         opt.compute.seed = int(opt.compute.seed)
