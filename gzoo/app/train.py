@@ -7,6 +7,7 @@ import os
 import time
 import warnings
 
+import pyrallis
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -18,8 +19,8 @@ import torch.utils.data.distributed
 import wandb
 from gzoo.domain import pipeline
 from gzoo.infra import utils
+from gzoo.infra.config import TrainConfig
 from gzoo.infra.logging import Log
-from gzoo.infra.options import Options
 from gzoo.infra.utils import AverageMeter, ProgressMeter
 
 NB_CLASSES = 5
@@ -31,8 +32,9 @@ val_example_ct = 0
 val_batch_ct = 0
 
 
-def main():
-    opt = Options()
+@pyrallis.wrap()
+def main(opt: TrainConfig):
+
     if opt.wandb.use:
         wandb.login()
 
