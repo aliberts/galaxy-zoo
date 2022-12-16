@@ -21,6 +21,7 @@ class ExpConfig:
 @dataclass
 class WandBConfig:
     use: bool = False
+    freq: int = 10
     entity: str = "aliberts"
     project: str = "galaxy-zoo"
     run_name: Optional[str] = None

@@ -6,6 +6,7 @@ import logging
 import os
 import time
 import warnings
+from dataclasses import asdict
 
 import pyrallis
 import torch
@@ -111,12 +112,11 @@ def main_worker(gpu, ngpus_per_node, opt, log_dir):
             entity=opt.wandb.entity,
             notes=opt.wandb.note,
             tags=opt.wandb.tags,
-            # config=opt,
-            # config=dict(opt.options),
+            config=asdict(opt),
         ):
-            # if opt.wandb.run_name is not None:
-            #     wandb.run_name = opt.wandb.run_name
-            #     wandb.run.save()
+            if opt.wandb.run_name is not None:
+                wandb.run_name = opt.wandb.run_name
+
             wandb.watch(model, criterion, log="all", log_freq=10)
             for epoch in range(opt.compute.start_epoch, opt.compute.epochs):
                 train_loop(
