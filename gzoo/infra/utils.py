@@ -52,8 +52,8 @@ def setup_cuda(model, opt, ngpus_per_node):
             # When using a single GPU per process and per
             # DistributedDataParallel, we need to divide the batch size
             # ourselves based on the total number of GPUs we have
-            opt.batch_size = int(opt.batch_size / ngpus_per_node)
-            opt.workers = int((opt.workers + ngpus_per_node - 1) / ngpus_per_node)
+            opt.compute.batch_size = int(opt.compute.batch_size / ngpus_per_node)
+            opt.compute.workers = int((opt.compute.workers + ngpus_per_node - 1) / ngpus_per_node)
             model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[opt.gpu])
         else:
             model.cuda()

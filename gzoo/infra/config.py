@@ -71,24 +71,12 @@ class PreprocessConfig:
 
 @dataclass
 class TrainConfig:
-    # exp: ExpConfig = field(default_factory=ExpConfig)  # TODO
-    test: bool = False
-    task: str = "classification"
-    evaluate: bool = False
-    exp: Optional[str] = field(default=None)
 
+    exp: ExpConfig = field(default_factory=ExpConfig)
     wandb: WandBConfig = field(default_factory=WandBConfig)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
-
-    # compute: ComputeConfig = field(default_factory=ComputeConfig)  # TODO
-    seed: Optional[int] = None  # seed for initializing training.
-    epochs: int = 90
-    start_epoch: int = 0  # manual epoch number (useful on restarts)
-    use_cuda: bool = True
-    workers: int = 8  # number of data loading workers
-    batch_size: int = 128
-
+    compute: ComputeConfig = field(default_factory=ComputeConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
 
@@ -104,10 +92,3 @@ class TrainConfig:
     # fastest way to use PyTorch for either single node or
     # multi node data parallel training
     multiprocessing_distributed: bool = False
-
-    # The number of workers for training
-    workers: int = field(default=8)
-    # The number of workers for evaluation
-    eval_workers: Optional[int] = field(default=None)
-    # The experiment root folder path
-    exp_root: Path = field(default=Path("/share/experiments"))

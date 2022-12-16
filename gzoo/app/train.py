@@ -43,11 +43,11 @@ def main(opt: TrainConfig):
     logging.debug("arguments:")
     logging.debug(opt)
 
-    if opt.seed is not None:
-        opt.seed = int(opt.seed)
-        utils.set_random_seed(opt.seed)
+    if opt.compute.seed is not None:
+        opt.compute.seed = int(opt.compute.seed)
+        utils.set_random_seed(opt.compute.seed)
 
-    if not opt.use_cuda:
+    if not opt.compute.use_cuda:
         torch.cuda.is_available = lambda: False
 
     if opt.gpu is not None:
@@ -97,7 +97,7 @@ def main_worker(gpu, ngpus_per_node, opt, log_dir):
         opt, ngpus_per_node
     )
 
-    if opt.evaluate:
+    if opt.exp.evaluate:
         validate(val_loader, model, criterion, opt)
         return
 
@@ -115,7 +115,7 @@ def main_worker(gpu, ngpus_per_node, opt, log_dir):
             #     wandb.run_name = opt.wandb.run_name
             #     wandb.run.save()
             wandb.watch(model, criterion, log="all", log_freq=10)
-            for epoch in range(opt.start_epoch, opt.epochs):
+            for epoch in range(opt.compute.start_epoch, opt.compute.epochs):
                 train_loop(
                     train_loader,
                     val_loader,
@@ -129,7 +129,7 @@ def main_worker(gpu, ngpus_per_node, opt, log_dir):
                     log_dir,
                 )
     else:
-        for epoch in range(opt.start_epoch, opt.epochs):
+        for epoch in range(opt.compute.start_epoch, opt.compute.epochs):
             train_loop(
                 train_loader,
                 val_loader,
@@ -182,7 +182,7 @@ def train_loop(
             "train-loss": train_loss,
             "val-loss": val_loss,
         }
-        if opt.task == "classification":
+        if opt.exp.task == "classification":
             tmp = {
                 "train-acc1": train_acc1,
                 "train-acc3": train_acc3,
@@ -219,7 +219,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     data_time = AverageMeter("Data", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
     metrics = [batch_time, data_time, losses]
-    if opt.task == "classification":
+    if opt.exp.task == "classification":
         top1 = AverageMeter("Acc@1", ":6.2f")
         top3 = AverageMeter("Acc@3", ":6.2f")
         metrics.extend([top1, top3])
@@ -238,7 +238,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         if torch.cuda.is_available():
             target = target.cuda(opt.gpu, non_blocking=True)
 
-        if opt.task == "classification":
+        if opt.exp.task == "classification":
             target = target.view(-1)
 
         # forward pass
@@ -247,7 +247,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
 
         # measure record loss and accuracy
         losses.update(loss.item(), images.size(0))
-        if opt.task == "classification":
+        if opt.exp.task == "classification":
             acc1, acc3 = accuracy(output, target, topk=(1, 3))
             top1.update(acc1[0], images.size(0))
             top3.update(acc3[0], images.size(0))
@@ -260,7 +260,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
                 "train_example_ct": train_example_ct,
                 "train-loss (batch)": loss.to("cpu"),
             }
-            if opt.task == "classification":
+            if opt.exp.task == "classification":
                 tmp = {
                     "train-acc1 (batch)": acc1.to("cpu"),
                     "train-acc3 (batch)": acc3.to("cpu"),
@@ -289,7 +289,7 @@ def validate(val_loader, model, criterion, opt):
     batch_time = AverageMeter("Time", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
     metrics = [batch_time, losses]
-    if opt.task == "classification":
+    if opt.exp.task == "classification":
         top1 = AverageMeter("Acc@1", ":6.2f")
         top3 = AverageMeter("Acc@3", ":6.2f")
         metrics.extend([top1, top3])
@@ -307,7 +307,7 @@ def validate(val_loader, model, criterion, opt):
             if torch.cuda.is_available():
                 target = target.cuda(opt.gpu, non_blocking=True)
 
-            if opt.task == "classification":
+            if opt.exp.task == "classification":
                 target = target.view(-1)
 
             # forward pass
@@ -316,7 +316,7 @@ def validate(val_loader, model, criterion, opt):
 
             # measure record loss and accuracy
             losses.update(loss.item(), images.size(0))
-            if opt.task == "classification":
+            if opt.exp.task == "classification":
                 acc1, acc3 = accuracy(output, target, topk=(1, 3))
                 top1.update(acc1[0], images.size(0))
                 top3.update(acc3[0], images.size(0))
@@ -333,7 +333,7 @@ def validate(val_loader, model, criterion, opt):
                     "val_example_ct": val_example_ct,
                     "val-loss (batch)": loss.to("cpu"),
                 }
-                if opt.task == "classification":
+                if opt.exp.task == "classification":
                     tmp = {
                         "val-acc1 (batch)": acc1.to("cpu"),
                         "val-acc3 (batch)": acc3.to("cpu"),

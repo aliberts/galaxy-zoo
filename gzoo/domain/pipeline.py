@@ -30,30 +30,30 @@ def build_train(opt, ngpus_per_node):
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
-        batch_size=opt.batch_size,
+        batch_size=opt.compute.batch_size,
         shuffle=(train_sampler is None),
-        num_workers=opt.workers,
+        num_workers=opt.compute.workers,
         pin_memory=True,
         sampler=train_sampler,
     )
 
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
-        batch_size=opt.batch_size,
+        batch_size=opt.compute.batch_size,
         shuffle=False,
-        num_workers=opt.workers,
+        num_workers=opt.compute.workers,
         pin_memory=True,
     )
 
     # Make loss function and optimizer
     # https://discuss.pytorch.org/t/what-is-the-weight-values-mean-in-torch-nn-crossentropyloss/11455/10
-    if opt.task == "classification":
+    if opt.exp.task == "classification":
         n_samples = [8014, 7665, 550, 3708, 7416]
         # weights = [max(n_samples) / x for x in n_samples]
         weights = [1.0 - x / sum(n_samples) for x in n_samples]
         weights = torch.FloatTensor(weights).cuda(opt.gpu)
         criterion = nn.CrossEntropyLoss(weight=weights).cuda(opt.gpu)
-    elif opt.task == "regression":
+    elif opt.exp.task == "regression":
         criterion = RMSELoss().cuda(opt.gpu)
 
     if opt.model.arch == "random":
@@ -84,15 +84,15 @@ def build_eval(opt, ngpus_per_node):
     test_dataset = GalaxyTestSet(opt)
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
-        batch_size=opt.batch_size,
+        batch_size=opt.compute.batch_size,
         shuffle=False,
-        num_workers=opt.workers,
+        num_workers=opt.compute.workers,
         pin_memory=True,
     )
     # Make loss function and optimizer
-    if opt.task == "classification":
+    if opt.exp.task == "classification":
         criterion = nn.CrossEntropyLoss().cuda(opt.gpu)
-    elif opt.task == "regression":
+    elif opt.exp.task == "regression":
         criterion = RMSELoss().cuda(opt.gpu)
 
     cudnn.benchmark = True
@@ -125,7 +125,7 @@ def resume_from_checkpoint(opt, model, optimizer):
         # Map model to be loaded to specified single gpu.
         loc = f"cuda:{opt.gpu}"
         checkpoint = torch.load(opt.resume, map_location=loc)
-    opt.start_epoch = checkpoint["epoch"]
+    opt.compute.start_epoch = checkpoint["epoch"]
     best_score = checkpoint["best_score"]
     if opt.gpu is not None:
         # best_score may be from a checkpoint from a different GPU

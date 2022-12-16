@@ -21,11 +21,11 @@ def main(yaml_path=None, run_cli=True):
 
     opt = Options(source=yaml_path, run_parser=run_cli)
 
-    if opt.seed is not None:
-        opt.seed = int(opt.seed)
-        utils.set_random_seed(opt.seed)
+    if opt.compute.seed is not None:
+        opt.compute.seed = int(opt.compute.seed)
+        utils.set_random_seed(opt.compute.seed)
 
-    if not opt.use_cuda:
+    if not opt.compute.use_cuda:
         torch.cuda.is_available = lambda: False
 
     if opt.gpu is not None:
