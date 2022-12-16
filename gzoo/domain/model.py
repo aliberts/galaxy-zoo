@@ -26,14 +26,14 @@ def load_model(opt, model):
     if not osp.isfile(pth):
         raise ImportError(f"=> model checkpoint not found at '{pth}'")
 
-    if not opt.use_cuda:
+    if not opt.compute.use_cuda:
         checkpoint = torch.load(pth, map_location=torch.device("cpu"))
         model = nn.DataParallel(model)
-    elif opt.gpu is None:
+    elif opt.distributed.gpu is None:
         checkpoint = torch.load(pth)
     else:
         # Map model to be loaded to specified single gpu.
-        loc = f"cuda:{opt.gpu}"
+        loc = f"cuda:{opt.distributed.gpu}"
         checkpoint = torch.load(pth, map_location=loc)
 
     model.load_state_dict(checkpoint["state_dict"])
@@ -58,10 +58,10 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__()
         self.ensembling = False
         self.output_constraints = opt.model.output_constraints
-        if opt.task == "classification":
+        if opt.exp.task == "classification":
             self.n_classes = 5
             self.scale = torch.nn.Identity()
-        elif opt.task == "regression":
+        elif opt.exp.task == "regression":
             self.n_classes = 37
             if self.output_constraints:
                 self.scale = rescale_anwsers
@@ -71,7 +71,7 @@ class ResNet(nn.Module):
         if opt.dataset.name == "imagenet":
             self.n_classes = 1000
 
-        if opt.test:
+        if opt.exp.test:
             self.scale = nn.Softmax(dim=1)
             self.ensembling = opt.ensembling.enable
             self.n_estimators = opt.ensembling.n_estimators
@@ -130,11 +130,11 @@ class CustomNet(nn.Module):
         super(CustomNet, self).__init__()
         self.ensembling = False
         self.output_constraints = opt.model.output_constraints
-        if opt.task == "classification":
+        if opt.exp.task == "classification":
             self.n_classes = 5
             # self.scale = nn.Softmax(dim=1)
             self.scale = torch.nn.Identity()
-        elif opt.task == "regression":
+        elif opt.exp.task == "regression":
             self.n_classes = 37
             if self.output_constraints:
                 self.scale = rescale_anwsers
@@ -144,7 +144,7 @@ class CustomNet(nn.Module):
         if opt.dataset.name == "imagenet":
             self.n_classes = 1000
 
-        if opt.test:
+        if opt.exp.test:
             self.ensembling = opt.ensembling.enable
             self.n_estimators = opt.ensembling.n_estimators
 
@@ -316,13 +316,13 @@ class Random(nn.Module):
 
     def __init__(self, opt):
         super(Random, self).__init__()
-        if opt.task == "classification":
+        if opt.exp.task == "classification":
             self.n_classes = 5
             self.scale = nn.Softmax(dim=1)
-        elif opt.task == "regression":
+        elif opt.exp.task == "regression":
             self.n_classes = 37
             self.scale = nn.Sigmoid(dim=1)
-        self.batch_size = opt.batch_size
+        self.batch_size = opt.compute.batch_size
 
     def forward(self, x=None):
         if x is not None:

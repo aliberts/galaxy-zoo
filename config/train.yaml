@@ -8,7 +8,7 @@ compute:
   use_cuda: true
   workers: 8
 dataset:
-  dir: example
+  dir: /home/simon/datasets/galaxy_zoo
   images: images_training_rev1/
   name: galaxy-zoo
   predictions: predictions/training_solutions_rev1.csv
@@ -32,5 +32,23 @@ model:
   output_constraints: true
   path: null
   pretrained: false
-output: predictions/predictions.csv
-template: all_ones_benchmark.csv
+optimizer:
+  lr: 0.0003
+  lr_scheduler_freq: 30
+  momentum: 0.9
+  name: adam
+  weight_decay: 0.0001
+preprocess:
+  augmentation: true
+  colorjitter: true
+  flip: true
+  rotate: true
+wandb:
+  entity: aliberts
+  note: null
+  project: galaxy-zoo
+  run_name: null
+  tags:
+  - baseline
+  - model exploration
+  use: false

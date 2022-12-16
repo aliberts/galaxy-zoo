@@ -38,8 +38,8 @@ class GalaxyTrainSet(Dataset):
     def __init__(self, split, opt):
         super(GalaxyTrainSet, self).__init__()
         self.split = split
-        self.task = opt.task
-        self.seed = opt.seed if opt.seed is not None else 0
+        self.task = opt.exp.task
+        self.seed = opt.compute.seed if opt.compute.seed is not None else 0
         self.datadir = opt.dataset.dir
         if not osp.exists(self.datadir):
             raise FileNotFoundError(
@@ -48,11 +48,11 @@ class GalaxyTrainSet(Dataset):
             )
         self.image_dir = osp.join(self.datadir, opt.dataset.images)
         self.label_file = osp.join(self.datadir, opt.dataset.train_labels)
-        if opt.evaluate:
+        if opt.exp.evaluate:
             self.label_file = osp.join(self.datadir, opt.dataset.test_labels)
 
         df = pd.read_csv(self.label_file, header=0, sep=",")
-        self.indexes, self.labels = self._split_dataset(df, opt.evaluate)
+        self.indexes, self.labels = self._split_dataset(df, opt.exp.evaluate)
         self.image_tf = self._build_transforms(opt)
 
     def _split_dataset(self, df, evaluate):

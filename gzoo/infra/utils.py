@@ -42,27 +42,29 @@ def set_random_seed(seed):
 def setup_cuda(model, opt, ngpus_per_node):
     if not torch.cuda.is_available():
         print("using CPU, this will be slow")
-    elif opt.distributed:
+    elif opt.distribute:
         # For multiprocessing distributed, DistributedDataParallel constructor
         # should always set the single device scope, otherwise,
         # DistributedDataParallel will use all available devices.
-        if opt.gpu is not None:
-            torch.cuda.set_device(opt.gpu)
-            model.cuda(opt.gpu)
+        if opt.distributed.gpu is not None:
+            torch.cuda.set_device(opt.distributed.gpu)
+            model.cuda(opt.distributed.gpu)
             # When using a single GPU per process and per
             # DistributedDataParallel, we need to divide the batch size
             # ourselves based on the total number of GPUs we have
-            opt.batch_size = int(opt.batch_size / ngpus_per_node)
-            opt.workers = int((opt.workers + ngpus_per_node - 1) / ngpus_per_node)
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[opt.gpu])
+            opt.compute.batch_size = int(opt.compute.batch_size / ngpus_per_node)
+            opt.compute.workers = int((opt.compute.workers + ngpus_per_node - 1) / ngpus_per_node)
+            model = torch.nn.parallel.DistributedDataParallel(
+                model, device_ids=[opt.distributed.gpu]
+            )
         else:
             model.cuda()
             # DistributedDataParallel will divide and allocate batch_size to all
             # available GPUs if device_ids are not set
             model = torch.nn.parallel.DistributedDataParallel(model)
-    elif opt.gpu is not None:
-        torch.cuda.set_device(opt.gpu)
-        model = model.cuda(opt.gpu)
+    elif opt.distributed.gpu is not None:
+        torch.cuda.set_device(opt.distributed.gpu)
+        model = model.cuda(opt.distributed.gpu)
     else:
         # DataParallel will divide and allocate batch_size to all available GPUs
         if opt.model.arch.startswith("alexnet") or opt.model.arch.startswith("vgg"):
