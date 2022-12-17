@@ -7,6 +7,8 @@ import torchvision.transforms as transforms
 import torchvision.transforms.functional as tf
 from torchvision import models
 
+from gzoo.infra.config import TrainConfig
+
 model_names = sorted(
     name
     for name in models.__dict__
@@ -17,23 +19,23 @@ COLOR_JITTER_FACTOR = 0.10
 DROPOUT = 0.40
 
 
-def load_model(opt, model):
-    if opt.model.path:
-        pth = opt.model.path
+def load_model(cfg: TrainConfig, model):
+    if cfg.model.path:
+        pth = cfg.model.path
     else:
-        pth = f"models/{opt.model.arch}.pth.tar"
+        pth = f"models/{cfg.model.arch}.pth.tar"
 
     if not osp.isfile(pth):
         raise ImportError(f"=> model checkpoint not found at '{pth}'")
 
-    if not opt.compute.use_cuda:
+    if not cfg.compute.use_cuda:
         checkpoint = torch.load(pth, map_location=torch.device("cpu"))
         model = nn.DataParallel(model)
-    elif opt.distributed.gpu is None:
+    elif cfg.distributed.gpu is None:
         checkpoint = torch.load(pth)
     else:
         # Map model to be loaded to specified single gpu.
-        loc = f"cuda:{opt.distributed.gpu}"
+        loc = f"cuda:{cfg.distributed.gpu}"
         checkpoint = torch.load(pth, map_location=loc)
 
     model.load_state_dict(checkpoint["state_dict"])
@@ -41,48 +43,48 @@ def load_model(opt, model):
     return model
 
 
-def create_model(opt):
-    if opt.model.arch.startswith("custom"):
-        model = CustomNet(opt)
-    elif opt.model.arch.startswith("resnet"):
-        model = ResNet(opt)
-    elif opt.model.arch == "random":
-        model = Random(opt)
+def create_model(cfg: TrainConfig):
+    if cfg.model.arch.startswith("custom"):
+        model = CustomNet(cfg)
+    elif cfg.model.arch.startswith("resnet"):
+        model = ResNet(cfg)
+    elif cfg.model.arch == "random":
+        model = Random(cfg)
     else:
         raise NotImplementedError
     return model
 
 
 class ResNet(nn.Module):
-    def __init__(self, opt):
-        super(ResNet, self).__init__()
+    def __init__(self, cfg: TrainConfig):
+        super().__init__()
         self.ensembling = False
-        self.output_constraints = opt.model.output_constraints
-        if opt.exp.task == "classification":
+        self.output_constraints = cfg.model.output_constraints
+        if cfg.exp.task == "classification":
             self.n_classes = 5
             self.scale = torch.nn.Identity()
-        elif opt.exp.task == "regression":
+        elif cfg.exp.task == "regression":
             self.n_classes = 37
             if self.output_constraints:
                 self.scale = rescale_anwsers
             else:
                 self.scale = nn.Sigmoid(dim=1)
 
-        if opt.dataset.name == "imagenet":
+        if cfg.dataset.name == "imagenet":
             self.n_classes = 1000
 
-        if opt.exp.test:
+        if cfg.exp.test:
             self.scale = nn.Softmax(dim=1)
-            self.ensembling = opt.ensembling.enable
-            self.n_estimators = opt.ensembling.n_estimators
-            opt.model.pretrained = False
+            self.ensembling = cfg.ensembling.enable
+            self.n_estimators = cfg.ensembling.n_estimators
+            cfg.model.pretrained = False
 
-        if opt.model.pretrained:
-            print(f"=> using pre-trained model '{opt.model.arch}'")
-            resnet = models.__dict__[opt.model.arch](pretrained=True)
+        if cfg.model.pretrained:
+            print(f"=> using pre-trained model '{cfg.model.arch}'")
+            resnet = models.__dict__[cfg.model.arch](pretrained=True)
         else:
-            print(f"=> creating model '{opt.model.arch}'")
-            resnet = models.__dict__[opt.model.arch]()
+            print(f"=> creating model '{cfg.model.arch}'")
+            resnet = models.__dict__[cfg.model.arch]()
 
         num_ft = resnet.fc.in_features
         resnet.fc = torch.nn.Identity()
@@ -97,7 +99,7 @@ class ResNet(nn.Module):
         self.conv = resnet
         self.dense = nn.ModuleList(m)
 
-        if opt.model.pretrained and opt.model.freeze:
+        if cfg.model.pretrained and cfg.model.freeze:
             for param in self.conv.parameters():
                 param.requires_grad = False
 
@@ -126,32 +128,32 @@ class ResNet(nn.Module):
 
 
 class CustomNet(nn.Module):
-    def __init__(self, opt):
-        super(CustomNet, self).__init__()
+    def __init__(self, cfg: TrainConfig):
+        super().__init__()
         self.ensembling = False
-        self.output_constraints = opt.model.output_constraints
-        if opt.exp.task == "classification":
+        self.output_constraints = cfg.model.output_constraints
+        if cfg.exp.task == "classification":
             self.n_classes = 5
             # self.scale = nn.Softmax(dim=1)
             self.scale = torch.nn.Identity()
-        elif opt.exp.task == "regression":
+        elif cfg.exp.task == "regression":
             self.n_classes = 37
             if self.output_constraints:
                 self.scale = rescale_anwsers
             else:
                 self.scale = nn.Sigmoid(dim=1)
 
-        if opt.dataset.name == "imagenet":
+        if cfg.dataset.name == "imagenet":
             self.n_classes = 1000
 
-        if opt.exp.test:
-            self.ensembling = opt.ensembling.enable
-            self.n_estimators = opt.ensembling.n_estimators
+        if cfg.exp.test:
+            self.ensembling = cfg.ensembling.enable
+            self.n_estimators = cfg.ensembling.n_estimators
 
         p = DROPOUT
         n = 0
-        if len(opt.model.arch) > len("custom"):
-            n = int(opt.model.arch[len("custom") :])
+        if len(cfg.model.arch) > len("custom"):
+            n = int(cfg.model.arch[len("custom") :])
 
         m = []
         m.extend(
@@ -314,15 +316,15 @@ def rescale_anwsers(x):
 class Random(nn.Module):
     """Random predictor to benchmark against models."""
 
-    def __init__(self, opt):
-        super(Random, self).__init__()
-        if opt.exp.task == "classification":
+    def __init__(self, cfg: TrainConfig):
+        super().__init__()
+        if cfg.exp.task == "classification":
             self.n_classes = 5
             self.scale = nn.Softmax(dim=1)
-        elif opt.exp.task == "regression":
+        elif cfg.exp.task == "regression":
             self.n_classes = 37
             self.scale = nn.Sigmoid(dim=1)
-        self.batch_size = opt.compute.batch_size
+        self.batch_size = cfg.compute.batch_size
 
     def forward(self, x=None):
         if x is not None:

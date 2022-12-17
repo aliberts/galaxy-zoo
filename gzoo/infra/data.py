@@ -28,32 +28,32 @@ class GalaxyTrainSet(Dataset):
 
     Args:
         split (str): "train", "val"
-        opt (namespace): options from config
+        cfg (namespace): options from config
 
     Returns (__getitem__):
         image (torch.Tensor)
         label (torch.Tensor)
     """
 
-    def __init__(self, split, opt):
-        super(GalaxyTrainSet, self).__init__()
+    def __init__(self, split, cfg):
+        super().__init__()
         self.split = split
-        self.task = opt.exp.task
-        self.seed = opt.compute.seed if opt.compute.seed is not None else 0
-        self.datadir = opt.dataset.dir
+        self.task = cfg.exp.task
+        self.seed = cfg.compute.seed if cfg.compute.seed is not None else 0
+        self.datadir = cfg.dataset.dir
         if not osp.exists(self.datadir):
             raise FileNotFoundError(
                 "Please download them from "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
-        self.image_dir = osp.join(self.datadir, opt.dataset.images)
-        self.label_file = osp.join(self.datadir, opt.dataset.train_labels)
-        if opt.exp.evaluate:
-            self.label_file = osp.join(self.datadir, opt.dataset.test_labels)
+        self.image_dir = osp.join(self.datadir, cfg.dataset.images)
+        self.label_file = osp.join(self.datadir, cfg.dataset.train_labels)
+        if cfg.exp.evaluate:
+            self.label_file = osp.join(self.datadir, cfg.dataset.test_labels)
 
         df = pd.read_csv(self.label_file, header=0, sep=",")
-        self.indexes, self.labels = self._split_dataset(df, opt.exp.evaluate)
-        self.image_tf = self._build_transforms(opt)
+        self.indexes, self.labels = self._split_dataset(df, cfg.exp.evaluate)
+        self.image_tf = self._build_transforms(cfg)
 
     def _split_dataset(self, df, evaluate):
         indexes = df.iloc[:, 0]
@@ -85,19 +85,19 @@ class GalaxyTrainSet(Dataset):
 
         return indexes.reset_index(drop=True), labels.reset_index(drop=True)
 
-    def _build_transforms(self, opt):
+    def _build_transforms(self, cfg):
         image_tf = []
-        if self.split == "train" and opt.preprocess.augmentation:
-            if opt.preprocess.rotate:
+        if self.split == "train" and cfg.preprocess.augmentation:
+            if cfg.preprocess.rotate:
                 image_tf.append(transforms.RandomRotation(180))
-            if opt.preprocess.flip:
+            if cfg.preprocess.flip:
                 image_tf.extend(
                     [
                         transforms.RandomHorizontalFlip(),
                         transforms.RandomVerticalFlip(),
                     ]
                 )
-            if opt.preprocess.colorjitter:
+            if cfg.preprocess.colorjitter:
                 image_tf.extend(
                     [
                         transforms.ColorJitter(
@@ -142,16 +142,16 @@ class GalaxyTestSet(Dataset):
 
     Args:
         split (str): "train", "val"
-        opt (namespace): options from config
+        cfg (namespace): options from config
 
     Returns (__getitem__):
         image (torch.Tensor)
         image_id (int)
     """
 
-    def __init__(self, opt):
-        super(GalaxyTestSet, self).__init__()
-        self.datadir = opt.dataset.dir
+    def __init__(self, cfg):
+        super().__init__()
+        self.datadir = cfg.dataset.dir
         if not osp.exists(self.datadir):
             raise FileNotFoundError(
                 "Please download them from "
@@ -185,9 +185,9 @@ class GalaxyTestSet(Dataset):
         return len(self.indexes)
 
 
-def imagenet(opt):
-    traindir = osp.join(opt.dataset.dir, "train")
-    valdir = osp.join(opt.dataset.dir, "val")
+def imagenet(cfg):
+    traindir = osp.join(cfg.dataset.dir, "train")
+    valdir = osp.join(cfg.dataset.dir, "val")
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     train_set = datasets.ImageFolder(

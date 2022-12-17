@@ -5,7 +5,6 @@ Inspired by https://github.com/pytorch/examples/blob/main/imagenet/main.py
 import logging
 import os
 import time
-import warnings
 from dataclasses import asdict
 
 import pyrallis
@@ -22,7 +21,7 @@ from gzoo.domain import pipeline
 from gzoo.infra import utils
 from gzoo.infra.config import TrainConfig
 from gzoo.infra.logging import Log
-from gzoo.infra.utils import AverageMeter, ProgressMeter
+from gzoo.infra.utils import AverageMeter, ProgressMeter, setup_distribute
 
 NB_CLASSES = 5
 
@@ -34,91 +33,83 @@ val_batch_ct = 0
 
 
 @pyrallis.wrap(config_path="config/train.yaml")
-def main(opt: TrainConfig):
+def main(cfg: TrainConfig):
 
     # To update the config file, uncomment this line
-    # pyrallis.dump(opt, open('config/train.yaml','w'))
+    # pyrallis.dump(cfg, open('config/train.yaml','w'))
 
-    if opt.wandb.use:
+    if cfg.wandb.use:
         wandb.login()
 
-    log = Log("train", opt)
+    log = Log("train", cfg.exp, cfg.model.arch)
     log.toggle()
     logging.debug("arguments:")
-    logging.debug(opt)
+    logging.debug(cfg)
 
-    if opt.compute.seed is not None:
-        opt.compute.seed = int(opt.compute.seed)
-        utils.set_random_seed(opt.compute.seed)
+    if cfg.compute.seed is not None:
+        cfg.compute.seed = int(cfg.compute.seed)
+        utils.set_random_seed(cfg.compute.seed)
 
-    if not opt.compute.use_cuda:
+    if not cfg.compute.use_cuda:
         torch.cuda.is_available = lambda: False
 
-    if opt.distributed.gpu is not None:
-        warnings.warn(
-            "You have chosen a specific GPU. This will completely disable data parallelism."
-        )
-
-    if opt.distributed.dist_url == "env://" and opt.distributed.world_size == -1:
-        opt.distributed.world_size = int(os.environ["WORLD_SIZE"])
-
-    opt.distribute = opt.distributed.world_size > 1 or opt.distributed.multiprocessing_distributed
-
+    distribute, cfg.distributed.world_size = setup_distribute(cfg.distributed)
     ngpus_per_node = torch.cuda.device_count()
-    if opt.distributed.multiprocessing_distributed:
+
+    if cfg.distributed.multiprocessing_distributed:
         # Since we have ngpus_per_node processes per node, the total world_size
         # needs to be adjusted accordingly
-        opt.distributed.world_size = ngpus_per_node * opt.distributed.world_size
+        cfg.distributed.world_size = ngpus_per_node * cfg.distributed.world_size
         # Use torch.multiprocessing.spawn to launch distributed processes: the
         # main_worker process function
-        mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, opt))
+        mp.spawn(main_worker, nprocs=ngpus_per_node, args=(distribute, ngpus_per_node, cfg))
     else:
         # Simply call main_worker function
-        main_worker(opt.distributed.gpu, ngpus_per_node, opt, log.dir)
+        main_worker(cfg.distributed.gpu, distribute, ngpus_per_node, cfg, log.dir)
 
 
-def main_worker(gpu, ngpus_per_node, opt, log_dir):
-    opt.distributed.gpu = gpu
+def main_worker(gpu, distribute: bool, ngpus_per_node: int, cfg: TrainConfig, log_dir: str) -> None:
+    cfg.distributed.gpu = gpu
 
-    if opt.distributed.gpu is not None:
-        logging.info(f"Use GPU: {opt.distributed.gpu} for training")
+    if cfg.distributed.gpu is not None:
+        logging.info(f"Use GPU: {cfg.distributed.gpu} for training")
 
-    if opt.distribute:
-        if opt.distributed.dist_url == "env://" and opt.distributed.rank == -1:
-            opt.distributed.rank = int(os.environ["RANK"])
-        if opt.distributed.multiprocessing_distributed:
+    if distribute:
+        if cfg.distributed.dist_url == "env://" and cfg.distributed.rank == -1:
+            cfg.distributed.rank = int(os.environ["RANK"])
+        if cfg.distributed.multiprocessing_distributed:
             # For multiprocessing distributed training, rank needs to be the
             # global rank among all the processes
-            opt.distributed.rank = opt.distributed.rank * ngpus_per_node + gpu
+            cfg.distributed.rank = cfg.distributed.rank * ngpus_per_node + gpu
         dist.init_process_group(
-            backend=opt.distributed.dist_backend,
-            init_method=opt.distributed.dist_url,
-            world_size=opt.distributed.world_size,
-            rank=opt.distributed.rank,
+            backend=cfg.distributed.dist_backend,
+            init_method=cfg.distributed.dist_url,
+            world_size=cfg.distributed.world_size,
+            rank=cfg.distributed.rank,
         )
 
     model, train_loader, val_loader, train_sampler, criterion, optimizer = pipeline.build_train(
-        opt, ngpus_per_node
+        cfg, distribute, ngpus_per_node
     )
 
-    if opt.exp.evaluate:
-        validate(val_loader, model, criterion, opt)
+    if cfg.exp.evaluate:
+        validate(val_loader, model, criterion, cfg)
         return
 
-    if opt.wandb.use:
+    if cfg.wandb.use:
         with wandb.init(
-            name=opt.wandb.run_name,
-            project=opt.wandb.project,
-            entity=opt.wandb.entity,
-            notes=opt.wandb.note,
-            tags=opt.wandb.tags,
-            config=asdict(opt),
+            name=cfg.wandb.run_name,
+            project=cfg.wandb.project,
+            entity=cfg.wandb.entity,
+            notes=cfg.wandb.note,
+            tags=cfg.wandb.tags,
+            config=asdict(cfg),
         ):
-            if opt.wandb.run_name is not None:
-                wandb.run_name = opt.wandb.run_name
+            if cfg.wandb.run_name is not None:
+                wandb.run_name = cfg.wandb.run_name
 
             wandb.watch(model, criterion, log="all", log_freq=10)
-            for epoch in range(opt.compute.start_epoch, opt.compute.epochs):
+            for epoch in range(cfg.compute.start_epoch, cfg.compute.epochs):
                 train_loop(
                     train_loader,
                     val_loader,
@@ -127,12 +118,13 @@ def main_worker(gpu, ngpus_per_node, opt, log_dir):
                     criterion,
                     optimizer,
                     epoch,
-                    opt,
+                    cfg,
+                    distribute,
                     ngpus_per_node,
                     log_dir,
                 )
     else:
-        for epoch in range(opt.compute.start_epoch, opt.compute.epochs):
+        for epoch in range(cfg.compute.start_epoch, cfg.compute.epochs):
             train_loop(
                 train_loader,
                 val_loader,
@@ -141,7 +133,8 @@ def main_worker(gpu, ngpus_per_node, opt, log_dir):
                 criterion,
                 optimizer,
                 epoch,
-                opt,
+                cfg,
+                distribute,
                 ngpus_per_node,
                 log_dir,
             )
@@ -154,38 +147,39 @@ def train_loop(
     model,
     criterion,
     optimizer,
-    epoch,
-    opt,
-    ngpus_per_node,
-    log_dir,
+    epoch: int,
+    cfg: TrainConfig,
+    distribute: bool,
+    ngpus_per_node: int,
+    log_dir: str,
 ):
     global best_score
-    if opt.distribute:
+    if distribute:
         train_sampler.set_epoch(epoch)
 
-    adjust_learning_rate(optimizer, epoch, opt)
+    adjust_learning_rate(optimizer, epoch, cfg)
 
-    # train for one epoch
+    # Train for one epoch
     train_loss, train_acc1, train_acc3 = train(
-        train_loader, model, criterion, optimizer, epoch, opt
+        train_loader, model, criterion, optimizer, epoch, cfg
     )
 
-    # evaluate on validation set
-    val_loss, val_acc1, val_acc3 = validate(val_loader, model, criterion, opt)
+    # Evaluate on validation set
+    val_loss, val_acc1, val_acc3 = validate(val_loader, model, criterion, cfg)
 
-    # remember best score and save checkpoint
+    # Remember best score and save checkpoint
     score = val_acc1
     is_best = score > best_score
     best_score = max(score, best_score)
 
     # Report metrics to w&b at a epoch time-step
-    if opt.wandb.use:
+    if cfg.wandb.use:
         metrics = {
             "epoch": epoch,
             "train-loss": train_loss,
             "val-loss": val_loss,
         }
-        if opt.exp.task == "classification":
+        if cfg.exp.task == "classification":
             tmp = {
                 "train-acc1": train_acc1,
                 "train-acc3": train_acc3,
@@ -197,15 +191,15 @@ def train_loop(
         wandb.run.summary["accuracy"] = best_score
 
     if (
-        not opt.distributed.multiprocessing_distributed
+        not cfg.distributed.multiprocessing_distributed
         or (
-            opt.distributed.multiprocessing_distributed
-            and opt.distributed.rank % ngpus_per_node == 0
+            cfg.distributed.multiprocessing_distributed
+            and cfg.distributed.rank % ngpus_per_node == 0
         )
-    ) and opt.model.arch != "random":
+    ) and cfg.model.arch != "random":
         checkpoint = {
             "epoch": epoch + 1,
-            "arch": opt.model.arch,
+            "arch": cfg.model.arch,
             "state_dict": model.state_dict(),
             "best_score": best_score,
             "optimizer": optimizer.state_dict(),
@@ -215,45 +209,45 @@ def train_loop(
             checkpoint,
             model,
             is_best,
-            opt,
+            cfg,
         )
 
 
-def train(train_loader, model, criterion, optimizer, epoch, opt):
+def train(train_loader, model, criterion, optimizer, epoch, cfg: TrainConfig):
     global train_example_ct, train_batch_ct
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
     metrics = [batch_time, data_time, losses]
-    if opt.exp.task == "classification":
+    if cfg.exp.task == "classification":
         top1 = AverageMeter("Acc@1", ":6.2f")
         top3 = AverageMeter("Acc@3", ":6.2f")
         metrics.extend([top1, top3])
     progress = ProgressMeter(len(train_loader), metrics, prefix=f"Epoch: [{epoch}]")
 
-    # switch to train mode
+    # Switch to train mode
     model.train()
 
     end = time.time()
     for i, (images, target) in enumerate(train_loader):
-        # measure data loading time
+        # Measure data loading time
         data_time.update(time.time() - end)
 
-        if opt.distributed.gpu is not None:
-            images = images.cuda(opt.distributed.gpu, non_blocking=True)
+        if cfg.distributed.gpu is not None:
+            images = images.cuda(cfg.distributed.gpu, non_blocking=True)
         if torch.cuda.is_available():
-            target = target.cuda(opt.distributed.gpu, non_blocking=True)
+            target = target.cuda(cfg.distributed.gpu, non_blocking=True)
 
-        if opt.exp.task == "classification":
+        if cfg.exp.task == "classification":
             target = target.view(-1)
 
-        # forward pass
+        # Forward pass
         output = model(images)
         loss = criterion(output, target)
 
-        # measure record loss and accuracy
+        # Measure record loss and accuracy
         losses.update(loss.item(), images.size(0))
-        if opt.exp.task == "classification":
+        if cfg.exp.task == "classification":
             acc1, acc3 = accuracy(output, target, topk=(1, 3))
             top1.update(acc1[0], images.size(0))
             top3.update(acc3[0], images.size(0))
@@ -261,12 +255,12 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         # Report metrics to w&b every n-th batch
         train_example_ct += len(images)
         train_batch_ct += 1
-        if opt.wandb.use and ((train_batch_ct + 1) % opt.wandb.freq) == 0:
+        if cfg.wandb.use and ((train_batch_ct + 1) % cfg.wandb.freq) == 0:
             batch_metrics = {
                 "train_example_ct": train_example_ct,
                 "train-loss (batch)": loss.to("cpu"),
             }
-            if opt.exp.task == "classification":
+            if cfg.exp.task == "classification":
                 tmp = {
                     "train-acc1 (batch)": acc1.to("cpu"),
                     "train-acc3 (batch)": acc3.to("cpu"),
@@ -274,28 +268,28 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
                 batch_metrics = {**batch_metrics, **tmp}
             wandb.log(batch_metrics)
 
-        # backward pass and gradient descent
-        if opt.model.arch != "random":
+        # Backward pass and gradient descent
+        if cfg.model.arch != "random":
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-        # measure elapsed time
+        # Measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if i % opt.compute.print_freq == 0:
+        if i % cfg.compute.print_freq == 0:
             progress.display(i)
 
     return losses.avg, top1.avg, top3.avg
 
 
-def validate(val_loader, model, criterion, opt):
+def validate(val_loader, model, criterion, cfg: TrainConfig):
     global val_example_ct, val_batch_ct
     batch_time = AverageMeter("Time", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
     metrics = [batch_time, losses]
-    if opt.exp.task == "classification":
+    if cfg.exp.task == "classification":
         top1 = AverageMeter("Acc@1", ":6.2f")
         top3 = AverageMeter("Acc@3", ":6.2f")
         metrics.extend([top1, top3])
@@ -308,12 +302,12 @@ def validate(val_loader, model, criterion, opt):
     with torch.no_grad():
         end = time.time()
         for i, (images, target) in enumerate(val_loader):
-            if opt.distributed.gpu is not None:
-                images = images.cuda(opt.distributed.gpu, non_blocking=True)
+            if cfg.distributed.gpu is not None:
+                images = images.cuda(cfg.distributed.gpu, non_blocking=True)
             if torch.cuda.is_available():
-                target = target.cuda(opt.distributed.gpu, non_blocking=True)
+                target = target.cuda(cfg.distributed.gpu, non_blocking=True)
 
-            if opt.exp.task == "classification":
+            if cfg.exp.task == "classification":
                 target = target.view(-1)
 
             # forward pass
@@ -322,7 +316,7 @@ def validate(val_loader, model, criterion, opt):
 
             # measure record loss and accuracy
             losses.update(loss.item(), images.size(0))
-            if opt.exp.task == "classification":
+            if cfg.exp.task == "classification":
                 acc1, acc3 = accuracy(output, target, topk=(1, 3))
                 top1.update(acc1[0], images.size(0))
                 top3.update(acc3[0], images.size(0))
@@ -334,12 +328,12 @@ def validate(val_loader, model, criterion, opt):
 
             val_example_ct += len(images)
             val_batch_ct += 1
-            if opt.wandb.use and ((val_batch_ct + 1) % opt.wandb.freq) == 0:
+            if cfg.wandb.use and ((val_batch_ct + 1) % cfg.wandb.freq) == 0:
                 batch_metrics = {
                     "val_example_ct": val_example_ct,
                     "val-loss (batch)": loss.to("cpu"),
                 }
-                if opt.exp.task == "classification":
+                if cfg.exp.task == "classification":
                     tmp = {
                         "val-acc1 (batch)": acc1.to("cpu"),
                         "val-acc3 (batch)": acc3.to("cpu"),
@@ -351,7 +345,7 @@ def validate(val_loader, model, criterion, opt):
             batch_time.update(time.time() - end)
             end = time.time()
 
-            if i % opt.compute.print_freq == 0:
+            if i % cfg.compute.print_freq == 0:
                 progress.display(i)
 
         logging.info(f" * Acc@1 {top1.avg:.3f} Acc@3 {top3.avg:.3f} Loss {losses.avg:.3f}")
@@ -361,11 +355,11 @@ def validate(val_loader, model, criterion, opt):
     return losses.avg, top1.avg, top3.avg
 
 
-def adjust_learning_rate(optimizer, epoch, opt):
+def adjust_learning_rate(optimizer, epoch, cfg: TrainConfig):
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     if optimizer is None:
         return
-    lr = opt.optimizer.lr * (0.1 ** (epoch // opt.optimizer.lr_scheduler_freq))
+    lr = cfg.optimizer.lr * (0.1 ** (epoch // cfg.optimizer.lr_scheduler_freq))
     for param_group in optimizer.param_groups:
         param_group["lr"] = lr
 
