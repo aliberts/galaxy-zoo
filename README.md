@@ -100,12 +100,12 @@ main run options:
 - `--compute.seed`: seed for deterministic training. (default: `None`)
 - `--compute.epochs`: total number of epochs (default: `90`)
 - `--compute.batch-size`: batch size (default: `128`)
-- `--compute.workers`: number of threads (default: `8`)
-- `--model.arch`: model architecture to be used(default: `resnet18`)
+- `--compute.workers`: number of data-loading threads (default: `8`)
+- `--model.arch`: model architecture to be used (default: `resnet18`)
 - `--model.pretrained`: use pre-trained model (default: `False`)
 - `--optimizer.lr`: optimizer learning rate (default: `3.e-4` with Adam)
-- `--optimizer.momentum`: optimizer momentum (default: `0.9`)
-- `--optimizer.weight-decay`: optimizer weights regularization (L2) (default `1.e-4`)
+- `--optimizer.momentum`: optimizer momentum (for SGD only, default: `0.9`)
+- `--optimizer.weight-decay`: optimizer weights regularization (L2, default `1.e-4`)
 
 
 # Predict
