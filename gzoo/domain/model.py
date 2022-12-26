@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 import torchvision.transforms.functional as tf
 from torchvision import models
 
-from gzoo.infra.config import TrainConfig
+from gzoo.infra.config import PredictConfig, TrainConfig
 
 model_names = sorted(
     name
@@ -359,7 +359,7 @@ def load_model(cfg: TrainConfig, model):
 
 
 # def create_model(cfg: TrainConfig) -> ResNet | CustomNet | Random:
-def create_model(cfg: TrainConfig) -> Model:
+def create_model(cfg: TrainConfig | PredictConfig) -> Model:
     if cfg.model.arch.startswith("resnet"):
         model = ResNet(cfg)
     elif cfg.model.arch.startswith("custom"):

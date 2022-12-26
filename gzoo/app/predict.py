@@ -1,23 +1,24 @@
-import os
 import time
 from contextlib import suppress
 
 import pyrallis
 import torch
-import torch.distributed as dist
+import torch.backends.cudnn as cudnn
 import torch.multiprocessing as mp
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
+from torch.utils.data import DataLoader
 
 from gzoo.domain import pipeline
+from gzoo.domain.model import Model
 from gzoo.infra.config import PredictConfig
 from gzoo.infra.utils import AverageMeter, ProgressMeter
 
 
 @pyrallis.wrap(config_path="config/predict.yaml")
-def main(cfg: PredictConfig):
+def main(cfg: PredictConfig) -> None:
 
     if cfg.distributed.multiprocessing_distributed:
         # Since we have ngpus_per_node processes per node, the total world_size
@@ -35,31 +36,23 @@ def main(cfg: PredictConfig):
         main_worker(cfg.distributed.gpu, cfg)
 
 
-def main_worker(gpu, cfg: PredictConfig):
+def main_worker(gpu, cfg: PredictConfig) -> None:
+
     cfg.distributed.gpu = gpu
+    cfg.distributed = pipeline.setup_distributed(gpu, cfg.distributed)
 
-    if cfg.distributed.gpu is not None:
-        print(f"Use GPU: {cfg.distributed.gpu} for training")
+    model = pipeline.create_model(cfg)
+    model, cfg.compute = pipeline.setup_cuda(model, cfg)
+    model = pipeline.load_model(cfg, model)
 
-    if cfg.distributed.use:
-        if cfg.distributed.dist_url == "env://" and cfg.distributed.rank == -1:
-            cfg.distributed.rank = int(os.environ["RANK"])
-        if cfg.distributed.multiprocessing_distributed:
-            # For multiprocessing distributed training, rank needs to be the
-            # global rank among all the processes
-            cfg.distributed.rank = cfg.distributed.rank * cfg.distributed.ngpus_per_node + gpu
-        dist.init_process_group(
-            backend=cfg.distributed.dist_backend,
-            init_method=cfg.distributed.dist_url,
-            world_size=cfg.distributed.world_size,
-            rank=cfg.distributed.rank,
-        )
+    test_loader = pipeline.make_test_dataset(cfg)
+    # criterion = pipeline.make_criterion(cfg)
+    cudnn.benchmark = True
 
-    model, test_loader, _ = pipeline.build_eval(cfg)
     validate(test_loader, model, cfg)
 
 
-def validate(test_loader, model, cfg: PredictConfig):
+def validate(test_loader: DataLoader, model: Model, cfg: PredictConfig) -> None:
     batch_time = AverageMeter("Time", ":6.3f")
     progress = ProgressMeter(len(test_loader), [], prefix="Test: ")
 

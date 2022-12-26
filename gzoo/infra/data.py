@@ -19,6 +19,7 @@ COLOR_JITTER_FACTOR = 0.10
 
 
 def pil_loader(path):
+    # TODO: Refactor to use pathlib.Path
     # open path as file to avoid ResourceWarning
     # (https://github.com/python-pillow/Pillow/issues/835)
     with open(path, "rb") as f, Image.open(f) as img:
@@ -190,6 +191,7 @@ class GalaxyTestSet(Dataset):
 def imagenet(cfg):
     traindir = osp.join(cfg.dataset.dir, "train")
     valdir = osp.join(cfg.dataset.dir, "val")
+    # https://stackoverflow.com/questions/58151507
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     train_set = datasets.ImageFolder(

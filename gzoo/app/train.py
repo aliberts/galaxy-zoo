@@ -39,7 +39,7 @@ val_batch_ct = 0
 
 
 @pyrallis.wrap(config_path="config/train.yaml")
-def main(cfg: TrainConfig):
+def main(cfg: TrainConfig) -> None:
 
     if cfg.wandb.use:
         wandb.login()
@@ -73,7 +73,7 @@ def main_worker(gpu, cfg: TrainConfig, log_dir: Path) -> None:
     model = pipeline.create_model(cfg)
     model, cfg.compute = pipeline.setup_cuda(model, cfg)
 
-    train_loader, val_loader, train_sampler = pipeline.make_dataset(cfg)
+    train_loader, val_loader, train_sampler = pipeline.make_train_dataset(cfg)
 
     criterion = pipeline.make_criterion(cfg)
     optimizer = pipeline.make_optimizer(cfg, model)

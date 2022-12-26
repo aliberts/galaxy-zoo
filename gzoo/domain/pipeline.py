@@ -15,7 +15,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 import wandb
 from gzoo.domain.model import Model, create_model, load_model
-from gzoo.infra.config import DistributedConfig, TrainConfig
+from gzoo.infra.config import ComputeConfig, DistributedConfig, PredictConfig, TrainConfig
 from gzoo.infra.data import GalaxyTestSet, GalaxyTrainSet, imagenet
 
 Loss: TypeAlias = Union[nn.CrossEntropyLoss, "RMSELoss"]
@@ -23,8 +23,8 @@ Loss: TypeAlias = Union[nn.CrossEntropyLoss, "RMSELoss"]
 
 def setup_cuda(
     model: Model,
-    cfg: TrainConfig,
-):
+    cfg: TrainConfig | PredictConfig,
+) -> tuple[Model, ComputeConfig]:
     if not torch.cuda.is_available():
         print("using CPU, this will be slow")
     elif cfg.distributed.use:
@@ -65,7 +65,29 @@ def setup_cuda(
     return model, cfg.compute
 
 
-def make_dataset(cfg: TrainConfig) -> tuple[DataLoader, DataLoader, DistributedSampler | None]:
+def setup_distributed(gpu, dist_cfg: DistributedConfig):
+    if dist_cfg.gpu is not None:
+        logging.info(f"Use GPU: {dist_cfg.gpu}")
+
+    if dist_cfg.use:
+        if dist_cfg.dist_url == "env://" and dist_cfg.rank == -1:
+            dist_cfg.rank = int(os.environ["RANK"])
+        if dist_cfg.multiprocessing_distributed:
+            # For multiprocessing distributed training, rank needs to be the
+            # global rank among all the processes
+            dist_cfg.rank = dist_cfg.rank * dist_cfg.ngpus_per_node + gpu
+        dist.init_process_group(
+            backend=dist_cfg.dist_backend,
+            init_method=dist_cfg.dist_url,
+            world_size=dist_cfg.world_size,
+            rank=dist_cfg.rank,
+        )
+    return dist_cfg
+
+
+def make_train_dataset(
+    cfg: TrainConfig,
+) -> tuple[DataLoader, DataLoader, DistributedSampler | None]:
     if cfg.dataset.name == "imagenet":
         train_dataset, val_dataset = imagenet(cfg)
     else:
@@ -97,13 +119,28 @@ def make_dataset(cfg: TrainConfig) -> tuple[DataLoader, DataLoader, DistributedS
     return train_loader, val_loader, train_sampler
 
 
-def make_criterion(cfg: TrainConfig) -> Loss:
+def make_test_dataset(cfg: PredictConfig) -> DataLoader:
+    test_dataset = GalaxyTestSet(cfg)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=cfg.compute.batch_size,
+        shuffle=False,
+        num_workers=cfg.compute.workers,
+        pin_memory=True,
+    )
+    return test_loader
+
+
+def make_criterion(cfg: TrainConfig | PredictConfig) -> Loss:
     if cfg.exp.task == "classification":
-        # https://discuss.pytorch.org/t/what-is-the-weight-values-mean-in-torch-nn-crossentropyloss/11455/10
-        n_samples = [8014, 7665, 550, 3708, 7416]
-        # weights = [max(n_samples) / x for x in n_samples]
-        weights = [1.0 - x / sum(n_samples) for x in n_samples]
-        weights = torch.FloatTensor(weights).cuda(cfg.distributed.gpu)
+        if isinstance(cfg, TrainConfig):
+            # https://discuss.pytorch.org/t/11455/10
+            n_samples = [8014, 7665, 550, 3708, 7416]
+            # weights = [max(n_samples) / x for x in n_samples]
+            weights = [1.0 - x / sum(n_samples) for x in n_samples]
+            weights = torch.FloatTensor(weights).cuda(cfg.distributed.gpu)
+        else:
+            weights = None
         criterion = nn.CrossEntropyLoss(weight=weights).cuda(cfg.distributed.gpu)
     elif cfg.exp.task == "regression":
         criterion = RMSELoss().cuda(cfg.distributed.gpu)
@@ -123,26 +160,6 @@ def make_optimizer(cfg: TrainConfig, model: Model) -> Optimizer:
             weight_decay=cfg.optimizer.weight_decay,
         )
     return optimizer
-
-
-def setup_distributed(gpu, dist_cfg: DistributedConfig):
-    if dist_cfg.gpu is not None:
-        logging.info(f"Use GPU: {dist_cfg.gpu} for training")
-
-    if dist_cfg.use:
-        if dist_cfg.dist_url == "env://" and dist_cfg.rank == -1:
-            dist_cfg.rank = int(os.environ["RANK"])
-        if dist_cfg.multiprocessing_distributed:
-            # For multiprocessing distributed training, rank needs to be the
-            # global rank among all the processes
-            dist_cfg.rank = dist_cfg.rank * dist_cfg.ngpus_per_node + gpu
-        dist.init_process_group(
-            backend=dist_cfg.dist_backend,
-            init_method=dist_cfg.dist_url,
-            world_size=dist_cfg.world_size,
-            rank=dist_cfg.rank,
-        )
-    return dist_cfg
 
 
 def build_eval(cfg: TrainConfig) -> tuple[Model, DataLoader, Loss]:
