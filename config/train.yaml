@@ -9,7 +9,7 @@ compute:
   workers: 8
 dataset:
   dir: /home/simon/datasets/galaxy_zoo
-  images: images_training_rev1/
+  images: images_training_rev1
   name: galaxy-zoo
   predictions: predictions/training_solutions_rev1.csv
   test_labels: classification_labels_test.csv
@@ -45,6 +45,7 @@ preprocess:
   rotate: true
 wandb:
   entity: aliberts
+  freq: 10
   note: null
   project: galaxy-zoo
   run_name: null

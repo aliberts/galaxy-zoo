@@ -1,5 +1,5 @@
-import os.path as osp
 from argparse import ArgumentParser, RawTextHelpFormatter
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -17,17 +17,18 @@ ABSTRACT = (
 )
 
 parser = ArgumentParser(description=ABSTRACT, formatter_class=RawTextHelpFormatter)
-parser.add_argument("data_dir", type=str, metavar="PATH")
+parser.add_argument("data_dir", type=Path, metavar="PATH")
 
 
 def main():
     args = parser.parse_args()
-    in_path = osp.join(args.data_dir, "training_solutions_rev1.csv")
+    in_path = args.data_dir / "training_solutions_rev1.csv"
     reg_labels = pd.read_csv(in_path, sep=",", index_col="GalaxyID")
     clf_labels = pd.DataFrame()
     clf_labels = clf_labels.assign(
         # fmt: off
         **{
+            # See https://arxiv.org/pdf/1308.3496.pdf, Table 3
             "completely_round_smooth":
                 (reg_labels["Class1.1"] >= 0.469) & (reg_labels["Class7.1"] >= 0.5),
             "in_between_smooth":
@@ -62,10 +63,10 @@ def main():
     clf_labels_train_val = get_classes_number(clf_labels_train_val)
     clf_labels_test = get_classes_number(clf_labels_test)
 
-    out_path = osp.join(args.data_dir, "classification_labels_train_val.csv")
+    out_path = args.data_dir / "classification_labels_train_val.csv"
     clf_labels_train_val.to_csv(out_path, sep=",")
     print(f"classification labels writen to {out_path}.")
-    out_path = osp.join(args.data_dir, "classification_labels_test.csv")
+    out_path = args.data_dir / "classification_labels_test.csv"
     clf_labels_test.to_csv(out_path, sep=",")
     print(f"classification labels writen to {out_path}.")
 

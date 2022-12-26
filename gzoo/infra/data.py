@@ -10,6 +10,8 @@ import torchvision.transforms as transforms
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 
+from gzoo.infra.config import PredictConfig, TrainConfig
+
 # from torchvision.utils import save_image
 
 VAL_SPLIT_RATIO = 0.10
@@ -35,21 +37,21 @@ class GalaxyTrainSet(Dataset):
         label (torch.Tensor)
     """
 
-    def __init__(self, split, cfg):
+    def __init__(self, split, cfg: TrainConfig):
         super().__init__()
         self.split = split
         self.task = cfg.exp.task
         self.seed = cfg.compute.seed if cfg.compute.seed is not None else 0
         self.datadir = cfg.dataset.dir
-        if not osp.exists(self.datadir):
+        if not self.datadir.exists():
             raise FileNotFoundError(
                 "Please download them from "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
-        self.image_dir = osp.join(self.datadir, cfg.dataset.images)
-        self.label_file = osp.join(self.datadir, cfg.dataset.train_labels)
+        self.image_dir = self.datadir / cfg.dataset.images
+        self.label_file = self.datadir / cfg.dataset.train_labels
         if cfg.exp.evaluate:
-            self.label_file = osp.join(self.datadir, cfg.dataset.test_labels)
+            self.label_file = self.datadir / cfg.dataset.test_labels
 
         df = pd.read_csv(self.label_file, header=0, sep=",")
         self.indexes, self.labels = self._split_dataset(df, cfg.exp.evaluate)
@@ -118,7 +120,7 @@ class GalaxyTrainSet(Dataset):
 
     def __getitem__(self, idx):
         image_id = self.indexes.iloc[idx]
-        path = osp.join(self.image_dir, f"{image_id}.jpg")
+        path = self.image_dir / f"{image_id}.jpg"
         image = pil_loader(path)
         # -- DEBUG --
         # tens = transforms.ToTensor()
@@ -149,16 +151,16 @@ class GalaxyTestSet(Dataset):
         image_id (int)
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: PredictConfig):
         super().__init__()
         self.datadir = cfg.dataset.dir
-        if not osp.exists(self.datadir):
+        if not self.datadir.exists():
             raise FileNotFoundError(
                 "Please download them from "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
 
-        self.image_dir = osp.join(self.datadir, "images_test_rev1")
+        self.image_dir = self.datadir / "images_test_rev1"
         image_list = []
         for filename in glob.glob(f"{self.image_dir}/*.jpg"):
             idx = filename.split("/")[-1][:-4]

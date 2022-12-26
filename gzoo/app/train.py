@@ -4,8 +4,11 @@ Inspired by https://github.com/pytorch/examples/blob/main/imagenet/main.py
 
 import logging
 import os
+import pprint
 import time
 from dataclasses import asdict
+from pathlib import Path
+from typing import Optional
 
 import pyrallis
 import torch
@@ -15,13 +18,16 @@ import torch.nn.parallel
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
+from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 import wandb
 from gzoo.domain import pipeline
-from gzoo.infra import utils
+from gzoo.domain.model import Model
+from gzoo.domain.pipeline import Loss
 from gzoo.infra.config import TrainConfig
 from gzoo.infra.logging import Log
-from gzoo.infra.utils import AverageMeter, ProgressMeter, setup_distribute
+from gzoo.infra.utils import AverageMeter, ProgressMeter
 
 NB_CLASSES = 5
 
@@ -35,52 +41,43 @@ val_batch_ct = 0
 @pyrallis.wrap(config_path="config/train.yaml")
 def main(cfg: TrainConfig):
 
-    # To update the config file, uncomment this line
-    # pyrallis.dump(cfg, open('config/train.yaml','w'))
-
     if cfg.wandb.use:
         wandb.login()
 
     log = Log("train", cfg.exp, cfg.model.arch)
     log.toggle()
     logging.debug("arguments:")
-    logging.debug(cfg)
-
-    if cfg.compute.seed is not None:
-        cfg.compute.seed = int(cfg.compute.seed)
-        utils.set_random_seed(cfg.compute.seed)
-
-    if not cfg.compute.use_cuda:
-        torch.cuda.is_available = lambda: False
-
-    distribute, cfg.distributed.world_size = setup_distribute(cfg.distributed)
-    ngpus_per_node = torch.cuda.device_count()
+    logging.debug(pprint.pformat(asdict(cfg)))
 
     if cfg.distributed.multiprocessing_distributed:
         # Since we have ngpus_per_node processes per node, the total world_size
         # needs to be adjusted accordingly
-        cfg.distributed.world_size = ngpus_per_node * cfg.distributed.world_size
+        cfg.distributed.world_size = cfg.distributed.ngpus_per_node * cfg.distributed.world_size
         # Use torch.multiprocessing.spawn to launch distributed processes: the
         # main_worker process function
-        mp.spawn(main_worker, nprocs=ngpus_per_node, args=(distribute, ngpus_per_node, cfg))
+        mp.spawn(
+            main_worker,
+            nprocs=cfg.distributed.ngpus_per_node,
+            args=(cfg.distributed.use, cfg.distributed.ngpus_per_node, cfg),
+        )
     else:
         # Simply call main_worker function
-        main_worker(cfg.distributed.gpu, distribute, ngpus_per_node, cfg, log.dir)
+        main_worker(cfg.distributed.gpu, cfg, log.dir)
 
 
-def main_worker(gpu, distribute: bool, ngpus_per_node: int, cfg: TrainConfig, log_dir: str) -> None:
+def main_worker(gpu, cfg: TrainConfig, log_dir: Path) -> None:
     cfg.distributed.gpu = gpu
 
     if cfg.distributed.gpu is not None:
         logging.info(f"Use GPU: {cfg.distributed.gpu} for training")
 
-    if distribute:
+    if cfg.distributed.use:
         if cfg.distributed.dist_url == "env://" and cfg.distributed.rank == -1:
             cfg.distributed.rank = int(os.environ["RANK"])
         if cfg.distributed.multiprocessing_distributed:
             # For multiprocessing distributed training, rank needs to be the
             # global rank among all the processes
-            cfg.distributed.rank = cfg.distributed.rank * ngpus_per_node + gpu
+            cfg.distributed.rank = cfg.distributed.rank * cfg.distributed.ngpus_per_node + gpu
         dist.init_process_group(
             backend=cfg.distributed.dist_backend,
             init_method=cfg.distributed.dist_url,
@@ -88,9 +85,7 @@ def main_worker(gpu, distribute: bool, ngpus_per_node: int, cfg: TrainConfig, lo
             rank=cfg.distributed.rank,
         )
 
-    model, train_loader, val_loader, train_sampler, criterion, optimizer = pipeline.build_train(
-        cfg, distribute, ngpus_per_node
-    )
+    model, train_loader, val_loader, train_sampler, criterion, optimizer = pipeline.build_train(cfg)
 
     if cfg.exp.evaluate:
         validate(val_loader, model, criterion, cfg)
@@ -119,8 +114,6 @@ def main_worker(gpu, distribute: bool, ngpus_per_node: int, cfg: TrainConfig, lo
                     optimizer,
                     epoch,
                     cfg,
-                    distribute,
-                    ngpus_per_node,
                     log_dir,
                 )
     else:
@@ -134,27 +127,23 @@ def main_worker(gpu, distribute: bool, ngpus_per_node: int, cfg: TrainConfig, lo
                 optimizer,
                 epoch,
                 cfg,
-                distribute,
-                ngpus_per_node,
                 log_dir,
             )
 
 
 def train_loop(
-    train_loader,
-    val_loader,
-    train_sampler,
-    model,
-    criterion,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    train_sampler: Optional[DistributedSampler],
+    model: Model,
+    criterion: Loss,
     optimizer,
     epoch: int,
     cfg: TrainConfig,
-    distribute: bool,
-    ngpus_per_node: int,
-    log_dir: str,
+    log_dir: Path,
 ):
     global best_score
-    if distribute:
+    if cfg.distributed.use:
         train_sampler.set_epoch(epoch)
 
     adjust_learning_rate(optimizer, epoch, cfg)
@@ -194,7 +183,7 @@ def train_loop(
         not cfg.distributed.multiprocessing_distributed
         or (
             cfg.distributed.multiprocessing_distributed
-            and cfg.distributed.rank % ngpus_per_node == 0
+            and cfg.distributed.rank % cfg.distributed.ngpus_per_node == 0
         )
     ) and cfg.model.arch != "random":
         checkpoint = {
@@ -213,7 +202,9 @@ def train_loop(
         )
 
 
-def train(train_loader, model, criterion, optimizer, epoch, cfg: TrainConfig):
+def train(
+    train_loader: DataLoader, model: Model, criterion: Loss, optimizer, epoch: int, cfg: TrainConfig
+) -> tuple[AverageMeter, AverageMeter, AverageMeter]:
     global train_example_ct, train_batch_ct
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
@@ -284,7 +275,9 @@ def train(train_loader, model, criterion, optimizer, epoch, cfg: TrainConfig):
     return losses.avg, top1.avg, top3.avg
 
 
-def validate(val_loader, model, criterion, cfg: TrainConfig):
+def validate(
+    val_loader: DataLoader, model: Model, criterion, cfg: TrainConfig
+) -> tuple[AverageMeter, AverageMeter, AverageMeter]:
     global val_example_ct, val_batch_ct
     batch_time = AverageMeter("Time", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
@@ -355,7 +348,7 @@ def validate(val_loader, model, criterion, cfg: TrainConfig):
     return losses.avg, top1.avg, top3.avg
 
 
-def adjust_learning_rate(optimizer, epoch, cfg: TrainConfig):
+def adjust_learning_rate(optimizer, epoch: int, cfg: TrainConfig) -> None:
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     if optimizer is None:
         return
@@ -364,7 +357,7 @@ def adjust_learning_rate(optimizer, epoch, cfg: TrainConfig):
         param_group["lr"] = lr
 
 
-def accuracy(output, target, topk=(1,)):
+def accuracy(output, target, topk=(1,)) -> list[float]:
     """Computes the accuracy over the k top predictions for the specified values of k"""
     with torch.no_grad():
         maxk = max(topk)

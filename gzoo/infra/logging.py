@@ -1,6 +1,6 @@
 import logging
-import os
 from datetime import datetime
+from pathlib import Path
 
 from gzoo.infra.config import ExpConfig
 
@@ -25,17 +25,16 @@ class Log:
         self.format = "[%(asctime)s][%(levelname)s][%(module)s] - %(message)s"
         self.datefmt = "%Y-%m-%d %H:%M:%S"
         self.level = level
+
         if exp.name:
-            self.dir = f"logs/{exp.name}/"
-            self.fpath = (
-                self.dir + "log_" + self.task + datetime.now().strftime("_%Y-%m-%d") + ".txt"
-            )
+            self.dir = Path(f"logs/{exp.name}/")
+            self.fpath = self.dir / f"log_{self.task}_{datetime.now().strftime('%Y-%m-%d')}.txt"
         else:
-            self.dir = f'logs/{self.model_name}_{datetime.now().strftime("_%Y-%m-%d")}/'
-            self.fpath = self.dir + "log_" + self.task + datetime.now().strftime("_%H%M") + ".txt"
+            self.dir = Path(f"logs/{self.model_name}_{datetime.now().strftime('%Y-%m-%d')}")
+            self.fpath = self.dir / f"log_{self.task}_{datetime.now().strftime('_%H%M')}.txt"
 
     def toggle(self):
-        os.system(f"mkdir -p {self.dir}")
+        self.dir.mkdir(exist_ok=True)
         logging.basicConfig(
             format=self.format,
             datefmt=self.datefmt,
@@ -49,7 +48,7 @@ class Log:
         console.setLevel(logging.INFO)
         logging.getLogger().addHandler(console)
 
-        with open(self.fpath, "a") as f:
+        with self.fpath.open("a") as f:
             first_line = "-" * 20 + "   " + self.task.upper()
             f.write(first_line)
             f.write("\n")

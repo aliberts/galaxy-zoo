@@ -1,5 +1,6 @@
 import random
-from os import path as osp
+from pathlib import Path
+from typing import TypeAlias, Union
 
 import torch
 import torch.nn as nn
@@ -18,41 +19,7 @@ model_names = sorted(
 COLOR_JITTER_FACTOR = 0.10
 DROPOUT = 0.40
 
-
-def load_model(cfg: TrainConfig, model):
-    if cfg.model.path:
-        pth = cfg.model.path
-    else:
-        pth = f"models/{cfg.model.arch}.pth.tar"
-
-    if not osp.isfile(pth):
-        raise ImportError(f"=> model checkpoint not found at '{pth}'")
-
-    if not cfg.compute.use_cuda:
-        checkpoint = torch.load(pth, map_location=torch.device("cpu"))
-        model = nn.DataParallel(model)
-    elif cfg.distributed.gpu is None:
-        checkpoint = torch.load(pth)
-    else:
-        # Map model to be loaded to specified single gpu.
-        loc = f"cuda:{cfg.distributed.gpu}"
-        checkpoint = torch.load(pth, map_location=loc)
-
-    model.load_state_dict(checkpoint["state_dict"])
-    print(f"=> loaded model '{pth}'")
-    return model
-
-
-def create_model(cfg: TrainConfig):
-    if cfg.model.arch.startswith("custom"):
-        model = CustomNet(cfg)
-    elif cfg.model.arch.startswith("resnet"):
-        model = ResNet(cfg)
-    elif cfg.model.arch == "random":
-        model = Random(cfg)
-    else:
-        raise NotImplementedError
-    return model
+Model: TypeAlias = Union["ResNet", "CustomNet", "Random"]
 
 
 class ResNet(nn.Module):
@@ -75,7 +42,7 @@ class ResNet(nn.Module):
 
         if cfg.exp.test:
             self.scale = nn.Softmax(dim=1)
-            self.ensembling = cfg.ensembling.enable
+            self.ensembling = cfg.ensembling.use
             self.n_estimators = cfg.ensembling.n_estimators
             cfg.model.pretrained = False
 
@@ -147,7 +114,7 @@ class CustomNet(nn.Module):
             self.n_classes = 1000
 
         if cfg.exp.test:
-            self.ensembling = cfg.ensembling.enable
+            self.ensembling = cfg.ensembling.use
             self.n_estimators = cfg.ensembling.n_estimators
 
         p = DROPOUT
@@ -365,3 +332,40 @@ class Rotation:
     def __call__(self, x):
         angle = random.choice(self.angles)
         return tf.rotate(x, angle)
+
+
+def load_model(cfg: TrainConfig, model):
+    if cfg.model.path:
+        pth = cfg.model.path
+    else:
+        pth = Path(f"models/{cfg.model.arch}.pth.tar")
+
+    if not pth.is_file():
+        raise FileNotFoundError(f"=> model checkpoint not found at '{pth}'")
+
+    if not cfg.compute.use_cuda:
+        checkpoint = torch.load(pth, map_location=torch.device("cpu"))
+        model = nn.DataParallel(model)
+    elif cfg.distributed.gpu is None:
+        checkpoint = torch.load(pth)
+    else:
+        # Map model to be loaded to specified single gpu.
+        loc = f"cuda:{cfg.distributed.gpu}"
+        checkpoint = torch.load(pth, map_location=loc)
+
+    model.load_state_dict(checkpoint["state_dict"])
+    print(f"=> loaded model '{pth}'")
+    return model
+
+
+# def create_model(cfg: TrainConfig) -> ResNet | CustomNet | Random:
+def create_model(cfg: TrainConfig) -> Model:
+    if cfg.model.arch.startswith("resnet"):
+        model = ResNet(cfg)
+    elif cfg.model.arch.startswith("custom"):
+        model = CustomNet(cfg)
+    elif cfg.model.arch == "random":
+        model = Random(cfg)
+    else:
+        raise NotImplementedError
+    return model

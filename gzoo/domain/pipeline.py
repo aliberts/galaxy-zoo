@@ -1,24 +1,72 @@
 import shutil
-from os import path as osp
+from pathlib import Path
+from typing import TypeAlias, Union
 
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.optim import Optimizer
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 import wandb
-from gzoo.domain.model import create_model, load_model
-from gzoo.infra import utils
+from gzoo.domain.model import Model, create_model, load_model
 from gzoo.infra.config import TrainConfig
 from gzoo.infra.data import GalaxyTestSet, GalaxyTrainSet, imagenet
 
+Loss: TypeAlias = Union[nn.CrossEntropyLoss, "RMSELoss"]
 
-def build_train(cfg: TrainConfig, distribute: bool, ngpus_per_node: int):
+
+def setup_cuda(
+    model: Model,
+    cfg: TrainConfig,
+):
+    if not torch.cuda.is_available():
+        print("using CPU, this will be slow")
+    elif cfg.distributed.use:
+        # For multiprocessing distributed, DistributedDataParallel constructor
+        # should always set the single device scope, otherwise,
+        # DistributedDataParallel will use all available devices.
+        if cfg.distributed.gpu is not None:
+            torch.cuda.set_device(cfg.distributed.gpu)
+            model.cuda(cfg.distributed.gpu)
+            # When using a single GPU per process and per
+            # DistributedDataParallel, we need to divide the batch size
+            # ourselves based on the total number of GPUs we have
+            cfg.compute.batch_size = int(cfg.compute.batch_size / cfg.distributed.ngpus_per_node)
+            cfg.compute.workers = int(
+                (cfg.compute.workers + cfg.distributed.ngpus_per_node - 1)
+                / cfg.distributed.ngpus_per_node
+            )
+            model = torch.nn.parallel.DistributedDataParallel(
+                model, device_ids=[cfg.distributed.gpu]
+            )
+        else:
+            model.cuda()
+            # DistributedDataParallel will divide and allocate batch_size to all
+            # available GPUs if device_ids are not set
+            model = torch.nn.parallel.DistributedDataParallel(model)
+    elif cfg.distributed.gpu is not None:
+        torch.cuda.set_device(cfg.distributed.gpu)
+        model = model.cuda(cfg.distributed.gpu)
+    else:
+        # DataParallel will divide and allocate batch_size to all available GPUs
+        model_name = cfg.model.arch
+        if model_name.startswith("alexnet") or model_name.startswith("vgg"):
+            model.features = torch.nn.DataParallel(model.features)
+            model.cuda()
+        else:
+            model = torch.nn.DataParallel(model).cuda()
+
+    return model, cfg.compute
+
+
+def build_train(
+    cfg: TrainConfig,
+) -> tuple[Model, DataLoader, DataLoader, DistributedSampler | None, Loss, Optimizer]:
     model = create_model(cfg)
-    model, cfg.compute = utils.setup_cuda(
-        model, cfg.compute, cfg.model.arch, cfg.distributed.gpu, distribute, ngpus_per_node
-    )
+    model, cfg.compute = setup_cuda(model, cfg)
 
     # Make the data
     if cfg.dataset.name == "imagenet":
@@ -27,8 +75,8 @@ def build_train(cfg: TrainConfig, distribute: bool, ngpus_per_node: int):
         train_dataset = GalaxyTrainSet("train", cfg)
         val_dataset = GalaxyTrainSet("val", cfg)
 
-    if distribute:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    if cfg.distributed.use:
+        train_sampler = DistributedSampler(train_dataset)
     else:
         train_sampler = None
 
@@ -80,11 +128,9 @@ def build_train(cfg: TrainConfig, distribute: bool, ngpus_per_node: int):
     return model, train_loader, val_loader, train_sampler, criterion, optimizer
 
 
-def build_eval(cfg: TrainConfig, distribute: bool, ngpus_per_node: int):
+def build_eval(cfg: TrainConfig) -> tuple[Model, DataLoader, Loss]:
     model = create_model(cfg)
-    model, cfg.compute = utils.setup_cuda(
-        model, cfg.compute, cfg.model.arch, cfg.distributed.gpu, distribute, ngpus_per_node
-    )
+    model, cfg.compute = setup_cuda(model, cfg)
     model = load_model(cfg, model)
 
     test_dataset = GalaxyTestSet(cfg)
@@ -105,23 +151,25 @@ def build_eval(cfg: TrainConfig, distribute: bool, ngpus_per_node: int):
     return model, test_loader, criterion
 
 
-def save_checkpoint(log_dir, state: dict, model, is_best: bool, cfg: TrainConfig) -> None:
-    filename = osp.join(log_dir, "checkpoint.pth.tar")
-    torch.save(state, filename)
+def save_checkpoint(
+    log_dir: Path, state: dict, model: Model, is_best: bool, cfg: TrainConfig
+) -> None:
+    file_path = log_dir / "checkpoint.pth.tar"
+    torch.save(state, file_path)
     if is_best:
-        model_name = osp.join(log_dir, cfg.model.arch)
-        shutil.copyfile(filename, model_name + ".pth.tar")
+        model_path = log_dir / cfg.model.arch
+        shutil.copyfile(file_path, model_path.with_suffix(".pth.tar"))
         if cfg.wandb.use:
             # onnx export to display in W&B
             device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             dummy = Variable(torch.randn(1, 3, 224, 224))
             dummy = dummy.to(device)
-            torch.onnx.export(model.module, dummy, model_name + ".onnx")
-            wandb.save(model_name + ".onnx")
+            torch.onnx.export(model.module, dummy, model_path.with_suffix(".onnx"))
+            wandb.save(str(model_path.with_suffix(".onnx")))
 
 
-def resume_from_checkpoint(cfg: TrainConfig, model, optimizer):
-    if not osp.isfile(cfg.compute.resume):
+def resume_from_checkpoint(cfg: TrainConfig, model: Model, optimizer):
+    if not cfg.compute.resume.is_file(cfg.compute.resume):
         raise FileNotFoundError(f"=> no checkpoint found at '{cfg.compute.resume}'")
 
     print(f"=> loading checkpoint '{cfg.compute.resume}'")

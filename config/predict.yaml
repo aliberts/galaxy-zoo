@@ -8,8 +8,8 @@ compute:
   use_cuda: true
   workers: 8
 dataset:
-  dir: example
-  images: images_training_rev1/
+  dir: /home/simon/datasets/galaxy_zoo
+  images: images_training_rev1
   name: galaxy-zoo
   predictions: predictions/training_solutions_rev1.csv
   test_labels: classification_labels_test.csv
@@ -21,11 +21,14 @@ distributed:
   multiprocessing_distributed: false
   rank: -1
   world_size: -1
+ensembling:
+  use: false
+  n_estimators: 50
 exp:
-  evaluate: false
+  evaluate: true
   name: null
   task: classification
-  test: false
+  test: true
 model:
   arch: resnet18
   freeze: false
