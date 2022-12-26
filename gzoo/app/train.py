@@ -3,7 +3,6 @@ Inspired by https://github.com/pytorch/examples/blob/main/imagenet/main.py
 """
 
 import logging
-import os
 import pprint
 import time
 from dataclasses import asdict
@@ -12,12 +11,13 @@ from typing import Optional
 
 import pyrallis
 import torch
-import torch.distributed as dist
+import torch.backends.cudnn as cudnn
 import torch.multiprocessing as mp
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
+from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
@@ -66,26 +66,23 @@ def main(cfg: TrainConfig):
 
 
 def main_worker(gpu, cfg: TrainConfig, log_dir: Path) -> None:
+
     cfg.distributed.gpu = gpu
+    cfg.distributed = pipeline.setup_distributed(gpu, cfg.distributed)
 
-    if cfg.distributed.gpu is not None:
-        logging.info(f"Use GPU: {cfg.distributed.gpu} for training")
+    model = pipeline.create_model(cfg)
+    model, cfg.compute = pipeline.setup_cuda(model, cfg)
 
-    if cfg.distributed.use:
-        if cfg.distributed.dist_url == "env://" and cfg.distributed.rank == -1:
-            cfg.distributed.rank = int(os.environ["RANK"])
-        if cfg.distributed.multiprocessing_distributed:
-            # For multiprocessing distributed training, rank needs to be the
-            # global rank among all the processes
-            cfg.distributed.rank = cfg.distributed.rank * cfg.distributed.ngpus_per_node + gpu
-        dist.init_process_group(
-            backend=cfg.distributed.dist_backend,
-            init_method=cfg.distributed.dist_url,
-            world_size=cfg.distributed.world_size,
-            rank=cfg.distributed.rank,
-        )
+    train_loader, val_loader, train_sampler = pipeline.make_dataset(cfg)
 
-    model, train_loader, val_loader, train_sampler, criterion, optimizer = pipeline.build_train(cfg)
+    criterion = pipeline.make_criterion(cfg)
+    optimizer = pipeline.make_optimizer(cfg, model)
+
+    # Optionally resume from a checkpoint
+    if cfg.compute.resume:
+        model, optimizer = pipeline.resume_from_checkpoint(cfg, model, optimizer)
+
+    cudnn.benchmark = True
 
     if cfg.exp.evaluate:
         validate(val_loader, model, criterion, cfg)
@@ -137,11 +134,11 @@ def train_loop(
     train_sampler: Optional[DistributedSampler],
     model: Model,
     criterion: Loss,
-    optimizer,
+    optimizer: Optimizer,
     epoch: int,
     cfg: TrainConfig,
     log_dir: Path,
-):
+) -> None:
     global best_score
     if cfg.distributed.use:
         train_sampler.set_epoch(epoch)
@@ -203,7 +200,12 @@ def train_loop(
 
 
 def train(
-    train_loader: DataLoader, model: Model, criterion: Loss, optimizer, epoch: int, cfg: TrainConfig
+    train_loader: DataLoader,
+    model: Model,
+    criterion: Loss,
+    optimizer: Optimizer,
+    epoch: int,
+    cfg: TrainConfig,
 ) -> tuple[AverageMeter, AverageMeter, AverageMeter]:
     global train_example_ct, train_batch_ct
     batch_time = AverageMeter("Time", ":6.3f")
@@ -276,7 +278,7 @@ def train(
 
 
 def validate(
-    val_loader: DataLoader, model: Model, criterion, cfg: TrainConfig
+    val_loader: DataLoader, model: Model, criterion: Loss, cfg: TrainConfig
 ) -> tuple[AverageMeter, AverageMeter, AverageMeter]:
     global val_example_ct, val_batch_ct
     batch_time = AverageMeter("Time", ":6.3f")
@@ -348,7 +350,7 @@ def validate(
     return losses.avg, top1.avg, top3.avg
 
 
-def adjust_learning_rate(optimizer, epoch: int, cfg: TrainConfig) -> None:
+def adjust_learning_rate(optimizer: Optimizer, epoch: int, cfg: TrainConfig) -> None:
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     if optimizer is None:
         return
@@ -357,7 +359,7 @@ def adjust_learning_rate(optimizer, epoch: int, cfg: TrainConfig) -> None:
         param_group["lr"] = lr
 
 
-def accuracy(output, target, topk=(1,)) -> list[float]:
+def accuracy(output: torch.Tensor, target: torch.Tensor, topk=(1,)) -> list[float]:
     """Computes the accuracy over the k top predictions for the specified values of k"""
     with torch.no_grad():
         maxk = max(topk)
@@ -374,7 +376,7 @@ def accuracy(output, target, topk=(1,)) -> list[float]:
         return res
 
 
-def accuracy_reg(output, target, topk=(1,)):
+def accuracy_reg(output: torch.Tensor, target: torch.Tensor, topk=(1,)) -> list[float]:
     """Computes the accuracy over the k top predictions for the specified values of k"""
     with torch.no_grad():
         batch_size = target.size(0)

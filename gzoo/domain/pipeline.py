@@ -1,9 +1,12 @@
+import logging
+import os
 import shutil
 from pathlib import Path
 from typing import TypeAlias, Union
 
 import torch
 import torch.backends.cudnn as cudnn
+import torch.distributed as dist
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.optim import Optimizer
@@ -12,7 +15,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 import wandb
 from gzoo.domain.model import Model, create_model, load_model
-from gzoo.infra.config import TrainConfig
+from gzoo.infra.config import DistributedConfig, TrainConfig
 from gzoo.infra.data import GalaxyTestSet, GalaxyTrainSet, imagenet
 
 Loss: TypeAlias = Union[nn.CrossEntropyLoss, "RMSELoss"]
@@ -62,13 +65,7 @@ def setup_cuda(
     return model, cfg.compute
 
 
-def build_train(
-    cfg: TrainConfig,
-) -> tuple[Model, DataLoader, DataLoader, DistributedSampler | None, Loss, Optimizer]:
-    model = create_model(cfg)
-    model, cfg.compute = setup_cuda(model, cfg)
-
-    # Make the data
+def make_dataset(cfg: TrainConfig) -> tuple[DataLoader, DataLoader, DistributedSampler | None]:
     if cfg.dataset.name == "imagenet":
         train_dataset, val_dataset = imagenet(cfg)
     else:
@@ -97,9 +94,12 @@ def build_train(
         pin_memory=True,
     )
 
-    # Make loss function and optimizer
-    # https://discuss.pytorch.org/t/what-is-the-weight-values-mean-in-torch-nn-crossentropyloss/11455/10
+    return train_loader, val_loader, train_sampler
+
+
+def make_criterion(cfg: TrainConfig) -> Loss:
     if cfg.exp.task == "classification":
+        # https://discuss.pytorch.org/t/what-is-the-weight-values-mean-in-torch-nn-crossentropyloss/11455/10
         n_samples = [8014, 7665, 550, 3708, 7416]
         # weights = [max(n_samples) / x for x in n_samples]
         weights = [1.0 - x / sum(n_samples) for x in n_samples]
@@ -107,7 +107,10 @@ def build_train(
         criterion = nn.CrossEntropyLoss(weight=weights).cuda(cfg.distributed.gpu)
     elif cfg.exp.task == "regression":
         criterion = RMSELoss().cuda(cfg.distributed.gpu)
+    return criterion
 
+
+def make_optimizer(cfg: TrainConfig, model: Model) -> Optimizer:
     if cfg.model.arch == "random":
         optimizer = None
     elif cfg.optimizer.name == "adam":
@@ -119,13 +122,27 @@ def build_train(
             momentum=cfg.optimizer.momentum,
             weight_decay=cfg.optimizer.weight_decay,
         )
+    return optimizer
 
-    # Optionally resume from a checkpoint
-    if cfg.compute.resume:
-        model, optimizer = resume_from_checkpoint(cfg, model, optimizer)
 
-    cudnn.benchmark = True
-    return model, train_loader, val_loader, train_sampler, criterion, optimizer
+def setup_distributed(gpu, dist_cfg: DistributedConfig):
+    if dist_cfg.gpu is not None:
+        logging.info(f"Use GPU: {dist_cfg.gpu} for training")
+
+    if dist_cfg.use:
+        if dist_cfg.dist_url == "env://" and dist_cfg.rank == -1:
+            dist_cfg.rank = int(os.environ["RANK"])
+        if dist_cfg.multiprocessing_distributed:
+            # For multiprocessing distributed training, rank needs to be the
+            # global rank among all the processes
+            dist_cfg.rank = dist_cfg.rank * dist_cfg.ngpus_per_node + gpu
+        dist.init_process_group(
+            backend=dist_cfg.dist_backend,
+            init_method=dist_cfg.dist_url,
+            world_size=dist_cfg.world_size,
+            rank=dist_cfg.rank,
+        )
+    return dist_cfg
 
 
 def build_eval(cfg: TrainConfig) -> tuple[Model, DataLoader, Loss]:

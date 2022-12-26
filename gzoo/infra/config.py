@@ -1,6 +1,6 @@
 """
 If you make changes here, you should also update the related .yaml config files in config/
-with a pyrallis.dump command that is present at the beginning of train.py and predict.py.
+by running 'poetry run python -m gzoo.app.update_config'
 """
 
 import os
