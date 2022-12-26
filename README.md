@@ -37,12 +37,17 @@ To better understand the task to be learned by the model, give it a go yourself:
 
 # Installation
 
+1. Ensure your gpu driver & cuda are properly setup for pytorch to use it (the name of your device should appear):
+```bash
+nvidia-smi
+```
+
 1. (Optional) Install [poetry](https://python-poetry.org/) if you don't have it already (I highly recommend it!):
 ```bash
 make setup-poetry
 ```
 
-2. Set yourself a virtual environment with python 3.10, e.g. using [pyenv](https://github.com/pyenv/pyenv) or [miniconda](https://docs.conda.io/en/latest/miniconda.html) (easier IMO):
+1. Set yourself a virtual environment with python 3.10, e.g. using [pyenv](https://github.com/pyenv/pyenv) or [miniconda](https://docs.conda.io/en/latest/miniconda.html) (easier IMO):
 ```bash
 conda create --name gzoo python=3.10  # miniconda
 conda activate gzoo
@@ -51,22 +56,17 @@ pyenv install 3.10:latest  # pyenv
 pyenv local 3.10:latest  # run in this directory
 ```
 
-3. Within this environment, install the project's dependencies:
+1. Within this environment, install the project's dependencies:
 ```bash
 poetry install
 ```
 
-4. To download the dataset (you'll need to login with [Kaggle's API](https://github.com/Kaggle/kaggle-api) first) run:
+1. To download the dataset (you'll need to login with [Kaggle's API](https://github.com/Kaggle/kaggle-api) first) run:
 ```bash
 make download-dataset
 ```
 
-5. Ensure your gpu driver is properly working for pytorch to use it (the name of your device should appear):
-```bash
-nvidia-smi
-```
-
-6. (Optional) If you intend to contribute in this repo, run:
+1. (Optional) If you intend to contribute in this repo, run:
 ```bash
 pre-commit install
 ```
@@ -88,7 +88,7 @@ poetry run python -m gzoo.app.train
 ```
 script option:
 - `--config_path`: specify the `.yaml` config file to read options from.
-Every run config option should be listed in this file (the default file for this is [config/train.yaml](config/train.yaml)) and every option in the `yaml` file can be overloaded *on the fly* at the command line.
+Every run config option should be listed in this file (the default file for this is [config/train.yaml](config/train.yaml)) and every option in that file can be overloaded *on the fly* at the command line.
 
 For instance, if you are fine with the values in the `yaml` config file but you just want to change the `epochs` number, you can either change it in the config file *or* you can directly run:
 ```bash
@@ -118,4 +118,11 @@ The `dataset` directory specified in the config must contain an `images_test_rev
 A 1-image example is provided which you can run with:
 ```bash
 poetry run python -m gzoo.app.predict --dataset.dir=example/
+```
+
+
+# Config
+If you make changes in [gzoo.infra.config](gzoo/infra/config.py), you should also update the related `.yaml` config files in [config/](config/) with
+```bash
+poetry run python -m gzoo.app.update_config
 ```
