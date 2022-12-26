@@ -13,17 +13,12 @@ repos:
       - id: check-toml
       - id: end-of-file-fixer
       - id: trailing-whitespace
--   repo: https://github.com/python-poetry/poetry
-    rev: 1.3.0
-    hooks:
-      - id: poetry-check
-      - id: poetry-lock  # Takes a little while to run
 -   repo: https://github.com/asottile/pyupgrade
     rev: v3.3.1
     hooks:
     -   id: pyupgrade
 -   repo: https://github.com/pycqa/isort
-    rev: v5.11.3
+    rev: 5.11.4
     hooks:
       - id: isort
 -   repo: https://github.com/psf/black
@@ -43,3 +38,11 @@ repos:
         - flake8-comprehensions
         - flake8-simplify
         - pep8-naming
+-   repo: https://github.com/python-poetry/poetry
+    rev: 1.3.0
+    hooks:
+      - id: poetry-check
+      - id: poetry-lock
+        args:
+          - "--check"
+          - "--no-update"
