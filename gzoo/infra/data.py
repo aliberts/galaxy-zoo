@@ -1,5 +1,5 @@
 import glob
-from os import path as osp
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -18,11 +18,10 @@ VAL_SPLIT_RATIO = 0.10
 COLOR_JITTER_FACTOR = 0.10
 
 
-def pil_loader(path):
-    # TODO: Refactor to use pathlib.Path
+def pil_loader(path: Path) -> Image:
     # open path as file to avoid ResourceWarning
     # (https://github.com/python-pillow/Pillow/issues/835)
-    with open(path, "rb") as f, Image.open(f) as img:
+    with path.open("rb") as f, Image.open(f) as img:
         return img.convert("RGB")
 
 
@@ -43,16 +42,15 @@ class GalaxyTrainSet(Dataset):
         self.split = split
         self.task = cfg.exp.task
         self.seed = cfg.compute.seed if cfg.compute.seed is not None else 0
-        self.datadir = cfg.dataset.dir
-        if not self.datadir.exists():
+        if not cfg.dataset.dir.exists():
             raise FileNotFoundError(
                 "Please download them from "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
-        self.image_dir = self.datadir / cfg.dataset.images
-        self.label_file = self.datadir / cfg.dataset.train_labels
+        self.image_dir = cfg.dataset.train_images
+        self.label_file = cfg.dataset.train_labels
         if cfg.exp.evaluate:
-            self.label_file = self.datadir / cfg.dataset.test_labels
+            self.label_file = cfg.dataset.test_labels
 
         df = pd.read_csv(self.label_file, header=0, sep=",")
         self.indexes, self.labels = self._split_dataset(df, cfg.exp.evaluate)
@@ -154,14 +152,13 @@ class GalaxyTestSet(Dataset):
 
     def __init__(self, cfg: PredictConfig):
         super().__init__()
-        self.datadir = cfg.dataset.dir
-        if not self.datadir.exists():
+        if not cfg.dataset.dir.exists():
             raise FileNotFoundError(
                 "Please download them from "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
 
-        self.image_dir = self.datadir / "images_test_rev1"
+        self.image_dir = cfg.dataset.test_images
         image_list = []
         for filename in glob.glob(f"{self.image_dir}/*.jpg"):
             idx = filename.split("/")[-1][:-4]
@@ -179,7 +176,7 @@ class GalaxyTestSet(Dataset):
 
     def __getitem__(self, idx):
         image_id = self.indexes.iloc[idx]
-        path = osp.join(self.image_dir, f"{image_id}.jpg")
+        path = self.image_dir / f"{image_id}.jpg"
         image = pil_loader(path)
         image = self.image_tf(image)
         return image, image_id
@@ -188,9 +185,9 @@ class GalaxyTestSet(Dataset):
         return len(self.indexes)
 
 
-def imagenet(cfg):
-    traindir = osp.join(cfg.dataset.dir, "train")
-    valdir = osp.join(cfg.dataset.dir, "val")
+def imagenet(cfg: TrainConfig):
+    traindir = cfg.dataset.dir / "train"
+    valdir = cfg.dataset.dir / "val"
     # https://stackoverflow.com/questions/58151507
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 

@@ -68,11 +68,10 @@ def validate(test_loader: DataLoader, model: Model, cfg: PredictConfig) -> None:
         "spiral",
     ]
 
-    output_file = cfg.dataset.dir / cfg.output
     with suppress(FileExistsError):
-        output_file.mkdir(exist_ok=True)
+        cfg.dataset.predictions.mkdir(exist_ok=True)
 
-    with torch.no_grad(), output_file.open("w") as out:
+    with torch.no_grad(), cfg.dataset.predictions.open("w") as out:
         out.write(",".join(class_headers) + "\n")
         end = time.time()
         for i, (images, ids) in enumerate(test_loader):
@@ -94,7 +93,7 @@ def validate(test_loader: DataLoader, model: Model, cfg: PredictConfig) -> None:
                 pred_id = ids[i] + ","
                 out.write(pred_id + ",".join(map(str, pred.tolist())) + "\n")
 
-    print(f"predictions writen in: {output_file}")
+    print(f"predictions writen in: {cfg.dataset.predictions}")
 
 
 if __name__ == "__main__":

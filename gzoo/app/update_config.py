@@ -15,6 +15,8 @@ def main():
         pyrallis.dump(train_cfg, train_f)
         pyrallis.dump(predict_cfg, predict_f)
 
+    print("Config files updated.")
+
 
 if __name__ == "__main__":
     main()

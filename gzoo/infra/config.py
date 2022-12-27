@@ -38,10 +38,36 @@ class WandBConfig:
 class DatasetConfig:
     name: str = "galaxy-zoo"
     dir: Path = field(default=Path("/home/simon/datasets/galaxy_zoo/"))
-    images: Path = field(default=Path("images_training_rev1/"))
-    train_labels: Path = field(default=Path("classification_labels_train_val.csv"))
-    test_labels: Path = field(default=Path("classification_labels_test.csv"))
-    predictions: Path = field(default=Path("predictions/training_solutions_rev1.csv"))
+    train_images_dir: Path = field(default=Path("images_training_rev1"))
+    train_labels_file: Path = field(default=Path("classification_labels_train_val.csv"))
+    test_images_dir: Path = field(default=Path("images_test_rev1"))
+    test_labels_file: Path = field(default=Path("classification_labels_test.csv"))
+    solutions_file: Path = field(default=Path("training_solutions_rev1.csv"))
+    predictions_file: Path = field(default=Path("predictions.csv"))
+
+    @property
+    def train_images(self) -> Path:
+        return self.dir / self.train_images_dir
+
+    @property
+    def train_labels(self) -> Path:
+        return self.dir / self.train_labels_file
+
+    @property
+    def test_images(self) -> Path:
+        return self.dir / self.test_images_dir
+
+    @property
+    def test_labels(self) -> Path:
+        return self.dir / self.test_labels_file
+
+    @property
+    def solutions(self) -> Path:
+        return self.dir / self.solutions_file
+
+    @property
+    def predictions(self) -> Path:
+        return self.dir / "predictions" / self.predictions_file
 
 
 @dataclass
