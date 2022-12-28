@@ -10,12 +10,9 @@ import torchvision.transforms as transforms
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 
-from gzoo.infra.config import PredictConfig, TrainConfig
+from gzoo.infra.config import PredictConfig, PreprocessConfig, TrainConfig
 
 # from torchvision.utils import save_image
-
-VAL_SPLIT_RATIO = 0.10
-COLOR_JITTER_FACTOR = 0.10
 
 
 def pil_loader(path: Path) -> Image:
@@ -40,6 +37,7 @@ class GalaxyTrainSet(Dataset):
     def __init__(self, split, cfg: TrainConfig):
         super().__init__()
         self.split = split
+        self.val_split_ratio = cfg.dataset.val_split_ratio
         self.task = cfg.exp.task
         self.seed = cfg.compute.seed if cfg.compute.seed is not None else 0
         if not cfg.dataset.dir.exists():
@@ -54,7 +52,7 @@ class GalaxyTrainSet(Dataset):
 
         df = pd.read_csv(self.label_file, header=0, sep=",")
         self.indexes, self.labels = self._split_dataset(df, cfg.exp.evaluate)
-        self.image_tf = self._build_transforms(cfg)
+        self.image_tf = self._build_transforms(cfg.preprocess)
 
     def _split_dataset(self, df, evaluate):
         indexes = df.iloc[:, 0]
@@ -64,7 +62,7 @@ class GalaxyTrainSet(Dataset):
             idx_train, idx_val, lbl_train, lbl_val = train_test_split(
                 indexes,
                 labels,
-                test_size=VAL_SPLIT_RATIO,
+                test_size=self.val_split_ratio,
                 random_state=self.seed,
                 stratify=labels,
             )
@@ -77,7 +75,7 @@ class GalaxyTrainSet(Dataset):
 
         elif self.task == "regression" and not evaluate:
             indices = np.random.RandomState(seed=self.seed).permutation(indexes.shape[0])
-            val_len = int(len(indexes) * VAL_SPLIT_RATIO)
+            val_len = int(len(indexes) * self.val_split_ratio)
             val_idx, train_idx = indices[:val_len], indices[val_len:]
             if self.split == "train":
                 indexes = indexes[train_idx]
@@ -86,26 +84,26 @@ class GalaxyTrainSet(Dataset):
 
         return indexes.reset_index(drop=True), labels.reset_index(drop=True)
 
-    def _build_transforms(self, cfg):
+    def _build_transforms(self, cfg: PreprocessConfig):
         image_tf = []
-        if self.split == "train" and cfg.preprocess.augmentation:
-            if cfg.preprocess.rotate:
+        if self.split == "train" and cfg.augmentation:
+            if cfg.rotate:
                 image_tf.append(transforms.RandomRotation(180))
-            if cfg.preprocess.flip:
+            if cfg.flip:
                 image_tf.extend(
                     [
                         transforms.RandomHorizontalFlip(),
                         transforms.RandomVerticalFlip(),
                     ]
                 )
-            if cfg.preprocess.colorjitter:
+            if cfg.color_jitter:
                 image_tf.extend(
                     [
                         transforms.ColorJitter(
-                            brightness=COLOR_JITTER_FACTOR,
-                            contrast=COLOR_JITTER_FACTOR,
-                            # saturation=COLOR_JITTER_FACTOR,
-                            # hue=COLOR_JITTER_FACTOR,
+                            brightness=cfg.color_jitter_factor,
+                            contrast=cfg.color_jitter_factor,
+                            # saturation=cfg.color_jitter_factor,
+                            # hue=cfg.color_jitter_factor,
                         ),
                     ]
                 )

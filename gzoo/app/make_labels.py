@@ -10,8 +10,6 @@ from sklearn.model_selection import train_test_split
 
 from gzoo.infra.config import TrainConfig
 
-TEST_SPLIT_RATIO = 0.1
-
 
 @pyrallis.wrap(config_path="config/train.yaml")
 def main(cfg: TrainConfig):
@@ -40,7 +38,7 @@ def main(cfg: TrainConfig):
 
     clf_labels_train_val, clf_labels_test = train_test_split(
         clf_labels,
-        test_size=TEST_SPLIT_RATIO,
+        test_size=cfg.dataset.test_split_ratio,
         random_state=0,
         stratify=clf_labels,
     )

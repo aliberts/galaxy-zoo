@@ -38,6 +38,8 @@ class WandBConfig:
 class DatasetConfig:
     name: str = "galaxy-zoo"
     dir: Path = field(default=Path("/home/simon/datasets/galaxy_zoo/"))
+    test_split_ratio: float = 0.1  # test / (train + val) ratio
+    val_split_ratio: float = 0.1  # val / train ratio
     train_images_dir: Path = field(default=Path("images_training_rev1"))
     train_labels_file: Path = field(default=Path("classification_labels_train_val.csv"))
     test_images_dir: Path = field(default=Path("images_test_rev1"))
@@ -139,7 +141,8 @@ class PreprocessConfig:
     augmentation: bool = True
     rotate: bool = True
     flip: bool = True
-    colorjitter: bool = True
+    color_jitter: bool = True
+    color_jitter_factor: float = 0.1
 
 
 @dataclass

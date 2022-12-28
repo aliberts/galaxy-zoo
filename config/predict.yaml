@@ -14,8 +14,10 @@ dataset:
   solutions_file: training_solutions_rev1.csv
   test_images_dir: images_test_rev1
   test_labels_file: classification_labels_test.csv
+  test_split_ratio: 0.1
   train_images_dir: images_training_rev1
   train_labels_file: classification_labels_train_val.csv
+  val_split_ratio: 0.1
 distributed:
   dist_backend: nccl
   dist_url: tcp://224.66.41.62:23456
