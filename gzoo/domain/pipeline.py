@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import TypeAlias, Union
 
 import torch
-import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.nn as nn
 from torch.autograd import Variable
@@ -196,30 +195,6 @@ def make_optimizer(cfg: TrainConfig, model: Model) -> Optimizer:
             weight_decay=cfg.optimizer.weight_decay,
         )
     return optimizer
-
-
-def build_eval(cfg: TrainConfig) -> tuple[Model, DataLoader, Loss]:
-    # TODO: remove
-    model = create_model(cfg)
-    model, cfg.compute = setup_cuda(model, cfg)
-    model = load_model(cfg, model)
-
-    test_dataset = GalaxyTestSet(cfg)
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=cfg.compute.batch_size,
-        shuffle=False,
-        num_workers=cfg.compute.workers,
-        pin_memory=True,
-    )
-    # Make loss function and optimizer
-    if cfg.exp.task == "classification":
-        criterion = nn.CrossEntropyLoss().cuda(cfg.distributed.gpu)
-    elif cfg.exp.task == "regression":
-        criterion = RMSELoss().cuda(cfg.distributed.gpu)
-
-    cudnn.benchmark = True
-    return model, test_loader, criterion
 
 
 def save_checkpoint(
