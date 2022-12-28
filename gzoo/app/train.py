@@ -58,7 +58,7 @@ def main(cfg: TrainConfig) -> None:
         mp.spawn(
             main_worker,
             nprocs=cfg.distributed.ngpus_per_node,
-            args=(cfg.distributed.use, cfg.distributed.ngpus_per_node, cfg),
+            args=(cfg, log.dir),
         )
     else:
         # Simply call main_worker function
