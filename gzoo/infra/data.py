@@ -3,12 +3,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import PIL.Image as Image
 import torch
-import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+from PIL.Image import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
+from torchvision.datasets import ImageFolder
+from torchvision.transforms.transforms import Compose
 
 from gzoo.infra.config import PredictConfig, PreprocessConfig, TrainConfig
 
@@ -34,7 +35,7 @@ class GalaxyTrainSet(Dataset):
         label (torch.Tensor)
     """
 
-    def __init__(self, split, cfg: TrainConfig):
+    def __init__(self, split: str, cfg: TrainConfig):
         super().__init__()
         self.split = split
         self.val_split_ratio = cfg.dataset.val_split_ratio
@@ -54,7 +55,7 @@ class GalaxyTrainSet(Dataset):
         self.indexes, self.labels = self._split_dataset(df, cfg.exp.evaluate)
         self.image_tf = self._build_transforms(cfg.preprocess)
 
-    def _split_dataset(self, df, evaluate):
+    def _split_dataset(self, df: pd.DataFrame, evaluate: bool) -> tuple[pd.DataFrame, pd.DataFrame]:
         indexes = df.iloc[:, 0]
         labels = df.iloc[:, 1:]
 
@@ -84,7 +85,7 @@ class GalaxyTrainSet(Dataset):
 
         return indexes.reset_index(drop=True), labels.reset_index(drop=True)
 
-    def _build_transforms(self, cfg: PreprocessConfig):
+    def _build_transforms(self, cfg: PreprocessConfig) -> Compose:
         image_tf = []
         if self.split == "train" and cfg.augmentation:
             if cfg.rotate:
@@ -115,7 +116,7 @@ class GalaxyTrainSet(Dataset):
         )
         return transforms.Compose(image_tf)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple[Image, torch.tensor]:
         image_id = self.indexes.iloc[idx]
         path = self.image_dir / f"{image_id}.jpg"
         image = pil_loader(path)
@@ -132,7 +133,7 @@ class GalaxyTrainSet(Dataset):
             label = torch.tensor(label).float()
         return image, label
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.indexes)
 
 
@@ -172,24 +173,24 @@ class GalaxyTestSet(Dataset):
         )
         self.image_tf = transforms.Compose(image_tf)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple[Image, int]:
         image_id = self.indexes.iloc[idx]
         path = self.image_dir / f"{image_id}.jpg"
         image = pil_loader(path)
         image = self.image_tf(image)
         return image, image_id
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.indexes)
 
 
-def imagenet(cfg: TrainConfig):
+def imagenet(cfg: TrainConfig) -> tuple[ImageFolder, ImageFolder]:
     traindir = cfg.dataset.dir / "train"
     valdir = cfg.dataset.dir / "val"
     # https://stackoverflow.com/questions/58151507
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-    train_set = datasets.ImageFolder(
+    train_set = ImageFolder(
         traindir,
         transforms.Compose(
             [
@@ -200,7 +201,7 @@ def imagenet(cfg: TrainConfig):
             ]
         ),
     )
-    test_set = datasets.ImageFolder(
+    test_set = ImageFolder(
         valdir,
         transforms.Compose(
             [

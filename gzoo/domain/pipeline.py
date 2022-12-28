@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
 import wandb
-from gzoo.domain.model import Model, create_model, load_model
+from gzoo.domain.model import CustomNet, Model, Random, ResNet
 from gzoo.infra.config import ComputeConfig, DistributedConfig, PredictConfig, TrainConfig
 from gzoo.infra.data import GalaxyTestSet, GalaxyTrainSet, imagenet
 
@@ -65,7 +65,7 @@ def setup_cuda(
     return model, cfg.compute
 
 
-def setup_distributed(gpu, dist_cfg: DistributedConfig):
+def setup_distributed(gpu: int | None, dist_cfg: DistributedConfig) -> DistributedConfig:
     if dist_cfg.gpu is not None:
         logging.info(f"Use GPU: {dist_cfg.gpu}")
 
@@ -83,6 +83,42 @@ def setup_distributed(gpu, dist_cfg: DistributedConfig):
             rank=dist_cfg.rank,
         )
     return dist_cfg
+
+
+def create_model(cfg: TrainConfig | PredictConfig) -> Model:
+    if cfg.model.arch.startswith("resnet"):
+        model = ResNet(cfg)
+    elif cfg.model.arch.startswith("custom"):
+        model = CustomNet(cfg)
+    elif cfg.model.arch == "random":
+        model = Random(cfg)
+    else:
+        raise NotImplementedError
+    return model
+
+
+def load_model(cfg: TrainConfig, model: Model) -> Model:
+    if cfg.model.path:
+        pth = cfg.model.path
+    else:
+        pth = Path(f"models/{cfg.model.arch}.pth.tar")
+
+    if not pth.is_file():
+        raise FileNotFoundError(f"=> model checkpoint not found at '{pth}'")
+
+    if not cfg.compute.use_cuda:
+        checkpoint = torch.load(pth, map_location=torch.device("cpu"))
+        model = nn.DataParallel(model)
+    elif cfg.distributed.gpu is None:
+        checkpoint = torch.load(pth)
+    else:
+        # Map model to be loaded to specified single gpu.
+        loc = f"cuda:{cfg.distributed.gpu}"
+        checkpoint = torch.load(pth, map_location=loc)
+
+    model.load_state_dict(checkpoint["state_dict"])
+    print(f"=> loaded model '{pth}'")
+    return model
 
 
 def make_train_dataset(
@@ -163,6 +199,7 @@ def make_optimizer(cfg: TrainConfig, model: Model) -> Optimizer:
 
 
 def build_eval(cfg: TrainConfig) -> tuple[Model, DataLoader, Loss]:
+    # TODO: remove
     model = create_model(cfg)
     model, cfg.compute = setup_cuda(model, cfg)
     model = load_model(cfg, model)
@@ -202,7 +239,9 @@ def save_checkpoint(
             wandb.save(str(model_path.with_suffix(".onnx")))
 
 
-def resume_from_checkpoint(cfg: TrainConfig, model: Model, optimizer):
+def resume_from_checkpoint(
+    cfg: TrainConfig, model: Model, optimizer: Optimizer
+) -> tuple[Model, Optimizer]:
     if not cfg.compute.resume.is_file(cfg.compute.resume):
         raise FileNotFoundError(f"=> no checkpoint found at '{cfg.compute.resume}'")
 
@@ -230,7 +269,7 @@ class RMSELoss(torch.nn.Module):
         super().__init__()
         self.criterion = nn.MSELoss(reduction="none")
 
-    def forward(self, x, y):
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         eps = 1.0e-8
         loss = self.criterion(x, y)
         loss = loss.mean(axis=1)

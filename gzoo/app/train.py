@@ -7,7 +7,6 @@ import pprint
 import time
 from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
 
 import pyrallis
 import torch
@@ -65,7 +64,7 @@ def main(cfg: TrainConfig) -> None:
         main_worker(cfg.distributed.gpu, cfg, log.dir)
 
 
-def main_worker(gpu, cfg: TrainConfig, log_dir: Path) -> None:
+def main_worker(gpu: int | None, cfg: TrainConfig, log_dir: Path) -> None:
 
     cfg.distributed.gpu = gpu
     cfg.distributed = pipeline.setup_distributed(gpu, cfg.distributed)
@@ -131,7 +130,7 @@ def main_worker(gpu, cfg: TrainConfig, log_dir: Path) -> None:
 def train_loop(
     train_loader: DataLoader,
     val_loader: DataLoader,
-    train_sampler: Optional[DistributedSampler],
+    train_sampler: DistributedSampler | None,
     model: Model,
     criterion: Loss,
     optimizer: Optimizer,

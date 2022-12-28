@@ -3,7 +3,7 @@ import pyrallis
 from gzoo.infra.config import PredictConfig, TrainConfig
 
 
-def main():
+def main() -> None:
     """
     This will regenerate .yaml config files based on the config classes defined
     in gzoo.infra.config. This script should be run whenever changes in those

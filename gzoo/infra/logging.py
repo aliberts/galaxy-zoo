@@ -33,7 +33,7 @@ class Log:
             self.dir = Path(f"logs/{self.model_name}_{datetime.now().strftime('%Y-%m-%d')}")
             self.fpath = self.dir / f"log_{self.task}_{datetime.now().strftime('_%H%M')}.txt"
 
-    def toggle(self):
+    def toggle(self) -> None:
         self.dir.mkdir(exist_ok=True)
         logging.basicConfig(
             format=self.format,

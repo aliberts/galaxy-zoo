@@ -1,5 +1,4 @@
 import random
-from pathlib import Path
 from typing import TypeAlias, Union
 
 import torch
@@ -8,7 +7,7 @@ import torchvision.transforms as transforms
 import torchvision.transforms.functional as tf
 from torchvision import models
 
-from gzoo.infra.config import PredictConfig, TrainConfig
+from gzoo.infra.config import TrainConfig
 
 model_names = sorted(
     name
@@ -86,7 +85,7 @@ class ResNet(nn.Module):
         x = self.scale(x)
         return x
 
-    def _fwd(self, x):
+    def _fwd(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv(x)
         for m in self.dense:
             x = m(x)
@@ -188,7 +187,7 @@ class CustomNet(nn.Module):
         x = self.scale(x)
         return x
 
-    def _fwd(self, x):
+    def _fwd(self, x: torch.Tensor) -> torch.Tensor:
         for m in self.conv:
             x = m(x)
         # x = x.contiguous()
@@ -201,7 +200,7 @@ class CustomNet(nn.Module):
         return x
 
 
-def rescale_anwsers(x):
+def rescale_anwsers(x: torch.Tensor) -> torch.Tensor:
     # raw model outputs ReLu-ised to questions
     q1 = x[:, :3]
     q2 = x[:, 3:5]
@@ -293,7 +292,7 @@ class Random(nn.Module):
             self.scale = nn.Sigmoid(dim=1)
         self.batch_size = cfg.compute.batch_size
 
-    def forward(self, x=None):
+    def forward(self, x: torch.Tensor = None) -> torch.Tensor:
         if x is not None:
             self.batch_size = x.shape[0]
         rand_pred = torch.rand((self.batch_size, self.n_classes))
@@ -319,7 +318,7 @@ class EnsemblingTransforms:
         ]
         self.im_tf = transforms.Compose(im_tf)
 
-    def __call__(self, x):
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
         return self.im_tf(x)
 
 
@@ -332,40 +331,3 @@ class Rotation:
     def __call__(self, x):
         angle = random.choice(self.angles)
         return tf.rotate(x, angle)
-
-
-def load_model(cfg: TrainConfig, model):
-    if cfg.model.path:
-        pth = cfg.model.path
-    else:
-        pth = Path(f"models/{cfg.model.arch}.pth.tar")
-
-    if not pth.is_file():
-        raise FileNotFoundError(f"=> model checkpoint not found at '{pth}'")
-
-    if not cfg.compute.use_cuda:
-        checkpoint = torch.load(pth, map_location=torch.device("cpu"))
-        model = nn.DataParallel(model)
-    elif cfg.distributed.gpu is None:
-        checkpoint = torch.load(pth)
-    else:
-        # Map model to be loaded to specified single gpu.
-        loc = f"cuda:{cfg.distributed.gpu}"
-        checkpoint = torch.load(pth, map_location=loc)
-
-    model.load_state_dict(checkpoint["state_dict"])
-    print(f"=> loaded model '{pth}'")
-    return model
-
-
-# def create_model(cfg: TrainConfig) -> ResNet | CustomNet | Random:
-def create_model(cfg: TrainConfig | PredictConfig) -> Model:
-    if cfg.model.arch.startswith("resnet"):
-        model = ResNet(cfg)
-    elif cfg.model.arch.startswith("custom"):
-        model = CustomNet(cfg)
-    elif cfg.model.arch == "random":
-        model = Random(cfg)
-    else:
-        raise NotImplementedError
-    return model

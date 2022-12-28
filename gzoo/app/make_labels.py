@@ -12,7 +12,7 @@ from gzoo.infra.config import TrainConfig
 
 
 @pyrallis.wrap(config_path="config/train.yaml")
-def main(cfg: TrainConfig):
+def main(cfg: TrainConfig) -> None:
     reg_labels = pd.read_csv(cfg.dataset.solutions, sep=",", index_col="GalaxyID")
     clf_labels = pd.DataFrame()
     clf_labels = clf_labels.assign(
@@ -59,7 +59,7 @@ def main(cfg: TrainConfig):
     print(f"classification labels writen to {cfg.dataset.test_labels}.")
 
 
-def get_classes_number(df):
+def get_classes_number(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = np.arange(0, len(df.columns))
     df = df.dot(df.columns.T)
     return df

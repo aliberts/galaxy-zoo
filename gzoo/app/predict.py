@@ -36,7 +36,7 @@ def main(cfg: PredictConfig) -> None:
         main_worker(cfg.distributed.gpu, cfg)
 
 
-def main_worker(gpu, cfg: PredictConfig) -> None:
+def main_worker(gpu: int | None, cfg: PredictConfig) -> None:
 
     cfg.distributed.gpu = gpu
     cfg.distributed = pipeline.setup_distributed(gpu, cfg.distributed)
@@ -46,7 +46,7 @@ def main_worker(gpu, cfg: PredictConfig) -> None:
     model = pipeline.load_model(cfg, model)
 
     test_loader = pipeline.make_test_dataset(cfg)
-    # criterion = pipeline.make_criterion(cfg)
+
     cudnn.benchmark = True
 
     validate(test_loader, model, cfg)
