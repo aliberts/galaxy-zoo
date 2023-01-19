@@ -37,7 +37,7 @@ class WandBConfig:
 @dataclass
 class DatasetConfig:
     name: str = "galaxy-zoo"
-    dir: Path = field(default=Path("/home/simon/datasets/galaxy_zoo/"))
+    dir: Path = field(default=Path("dataset/"))
     test_split_ratio: float = 0.1  # test / (train + val) ratio
     val_split_ratio: float = 0.1  # val / train ratio
     train_images_dir: Path = field(default=Path("images_training_rev1"))

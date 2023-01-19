@@ -8,7 +8,7 @@ compute:
   use_cuda: true
   workers: 8
 dataset:
-  dir: /home/simon/datasets/galaxy_zoo
+  dir: dataset
   name: galaxy-zoo
   predictions_file: predictions.csv
   solutions_file: training_solutions_rev1.csv
