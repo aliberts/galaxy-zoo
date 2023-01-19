@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torchvision.transforms as transforms
-from PIL.Image import Image
+from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 from torchvision.datasets import ImageFolder
@@ -116,7 +116,7 @@ class GalaxyTrainSet(Dataset):
         )
         return transforms.Compose(image_tf)
 
-    def __getitem__(self, idx: int) -> tuple[Image, torch.tensor]:
+    def __getitem__(self, idx: int) -> tuple[Image.Image, torch.tensor]:
         image_id = self.indexes.iloc[idx]
         path = self.image_dir / f"{image_id}.jpg"
         image = pil_loader(path)
@@ -173,7 +173,7 @@ class GalaxyTestSet(Dataset):
         )
         self.image_tf = transforms.Compose(image_tf)
 
-    def __getitem__(self, idx: int) -> tuple[Image, int]:
+    def __getitem__(self, idx: int) -> tuple[Image.Image, int]:
         image_id = self.indexes.iloc[idx]
         path = self.image_dir / f"{image_id}.jpg"
         image = pil_loader(path)
