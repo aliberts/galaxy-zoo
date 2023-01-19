@@ -42,31 +42,40 @@ To better understand the task to be learned by the model, give it a go yourself:
 nvidia-smi
 ```
 
-1. (Optional) Install [poetry](https://python-poetry.org/) if you don't have it already (I highly recommend it!):
+2. (optional) Install [poetry](https://python-poetry.org/) if you don't have it already (I highly recommend it!):
 ```bash
 make setup-poetry
 ```
 
-1. Set yourself a virtual environment with python 3.10, e.g. using [pyenv](https://github.com/pyenv/pyenv) or [miniconda](https://docs.conda.io/en/latest/miniconda.html) (easier IMO):
+3. Set yourself a virtual environment with python 3.10, e.g. using [miniconda](https://docs.conda.io/en/latest/miniconda.html) (easier IMO):
 ```bash
-conda create --name gzoo python=3.10  # miniconda
+conda create --yes --name gzoo python=3.10  # miniconda
 conda activate gzoo
-# or
+```
+
+or [pyenv](https://github.com/pyenv/pyenv):
+```bash
 pyenv install 3.10:latest  # pyenv
 pyenv local 3.10:latest  # run in this directory
 ```
 
-1. Within this environment, install the project's dependencies:
+4. Within this environment, install the project's dependencies:
 ```bash
 poetry install
 ```
 
-1. To download the dataset (you'll need to login with [Kaggle's API](https://github.com/Kaggle/kaggle-api) first) run:
+5. To download the dataset, run:
 ```bash
-make download-dataset
+make dataset
+```
+This will download and extract the archives into `dataset/`. You'll need to login with [Kaggle's API](https://github.com/Kaggle/kaggle-api) first and place your `kaggle.json` api key inside `~/.kaggle` by default.
+
+6. (optional) Make your commands shorter with this `alias`:
+```bash
+alias py='poetry run python'
 ```
 
-1. (Optional) If you intend to contribute in this repo, run:
+7. (optional) If you intend to contribute in this repo, run:
 ```bash
 pre-commit install
 ```
@@ -74,15 +83,14 @@ pre-commit install
 You're good to go!
 
 
-# Train
+# Training
 ## Create the training labels for classification
 ```bash
-poetry run python -m gzoo.app.make_labels <data_dir>
+poetry run python -m gzoo.app.make_labels
 ```
-required arguments:
-- `<data_dir>`: specifies the location of the dataset directory containing the original regression labels from the dataset `training_solutions_rev1.csv`
+This will produce the files `classification_labels_train_val.csv` and `classification_labels_test.csv` inside `dataset/`, which are needed for training and testing.
 
-## Run the classification pipeline:
+## Run the classification pipeline
 ```bash
 poetry run python -m gzoo.app.train
 ```
@@ -108,12 +116,11 @@ main run options:
 - `--optimizer.weight-decay`: optimizer weights regularization (L2, default `1.e-4`)
 
 
-# Predict
+# Prediction
 ```bash
 poetry run python -m gzoo.app.predict
 ```
 Config works the same way as for training, default config is at [config/predict.yaml](config/predict.yaml).
-The `dataset` directory specified in the config must contain an `images_test_rev1` folder that contains itself the images to predict, as well as the `all_ones_benchmark.csv` output template from the Kaggle project's data sources.
 
 A 1-image example is provided which you can run with:
 ```bash
@@ -122,7 +129,7 @@ poetry run python -m gzoo.app.predict --dataset.dir=example/
 
 
 # Config
-If you make changes in [gzoo.infra.config](gzoo/infra/config.py), you should also update the related `.yaml` config files in [config/](config/) with
+If you make changes in [gzoo.infra.config](gzoo/infra/config.py), you should also update the related `.yaml` config files in [config/](config/) with:
 ```bash
 poetry run python -m gzoo.app.update_config
 ```
