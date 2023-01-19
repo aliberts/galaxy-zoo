@@ -43,7 +43,7 @@ class GalaxyTrainSet(Dataset):
         self.seed = cfg.compute.seed if cfg.compute.seed is not None else 0
         if not cfg.dataset.dir.exists():
             raise FileNotFoundError(
-                "Please download them from "
+                "Dataset not found. Please run `make dataset` or download it from: "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
         self.image_dir = cfg.dataset.train_images
@@ -51,7 +51,13 @@ class GalaxyTrainSet(Dataset):
         if cfg.exp.evaluate:
             self.label_file = cfg.dataset.test_labels
 
-        df = pd.read_csv(self.label_file, header=0, sep=",")
+        try:
+            df = pd.read_csv(self.label_file, header=0, sep=",")
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                "Classification labels not found. "
+                "Run `poetry run python -m gzoo.app.make_labels` first."
+            )
         self.indexes, self.labels = self._split_dataset(df, cfg.exp.evaluate)
         self.image_tf = self._build_transforms(cfg.preprocess)
 
