@@ -3,6 +3,7 @@
 ._.DS_Store
 
 # Data
+dataset/
 *.csv
 !example/all_ones_benchmark.csv
 

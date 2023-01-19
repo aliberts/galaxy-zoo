@@ -8,18 +8,24 @@ compute:
   use_cuda: true
   workers: 8
 dataset:
-  dir: /home/simon/datasets/galaxy_zoo
-  images: images_training_rev1/
+  dir: dataset
   name: galaxy-zoo
-  predictions: predictions/training_solutions_rev1.csv
-  test_labels: classification_labels_test.csv
-  train_labels: classification_labels_train_val.csv
+  predictions_file: predictions.csv
+  solutions_file: training_solutions_rev1.csv
+  test_images_dir: images_test_rev1
+  test_labels_file: classification_labels_test.csv
+  test_split_ratio: 0.1
+  train_images_dir: images_training_rev1
+  train_labels_file: classification_labels_train_val.csv
+  val_split_ratio: 0.1
 distributed:
   dist_backend: nccl
   dist_url: tcp://224.66.41.62:23456
   gpu: null
   multiprocessing_distributed: false
+  ngpus_per_node: 1
   rank: -1
+  use: false
   world_size: -1
 exp:
   evaluate: false
@@ -40,11 +46,13 @@ optimizer:
   weight_decay: 0.0001
 preprocess:
   augmentation: true
-  colorjitter: true
+  color_jitter: true
+  color_jitter_factor: 0.1
   flip: true
   rotate: true
 wandb:
   entity: aliberts
+  freq: 10
   note: null
   project: galaxy-zoo
   run_name: null

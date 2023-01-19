@@ -1,13 +1,18 @@
 """
 If you make changes here, you should also update the related .yaml config files in config/
-with a pyrallis.dump command that is present at the beginning of train.py and predict.py.
+by running 'poetry run python -m gzoo.app.update_config'
 """
 
+import os
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import torch
 from pyrallis import field
+
+from gzoo.infra import utils
 
 
 @dataclass
@@ -32,11 +37,39 @@ class WandBConfig:
 @dataclass
 class DatasetConfig:
     name: str = "galaxy-zoo"
-    dir: Path = field(default=Path("/home/simon/datasets/galaxy_zoo/"))
-    images: str = "images_training_rev1/"
-    train_labels: str = "classification_labels_train_val.csv"
-    test_labels: str = "classification_labels_test.csv"
-    predictions: str = "predictions/training_solutions_rev1.csv"
+    dir: Path = field(default=Path("dataset/"))
+    test_split_ratio: float = 0.1  # test / (train + val) ratio
+    val_split_ratio: float = 0.1  # val / train ratio
+    train_images_dir: Path = field(default=Path("images_training_rev1"))
+    train_labels_file: Path = field(default=Path("classification_labels_train_val.csv"))
+    test_images_dir: Path = field(default=Path("images_test_rev1"))
+    test_labels_file: Path = field(default=Path("classification_labels_test.csv"))
+    solutions_file: Path = field(default=Path("training_solutions_rev1.csv"))
+    predictions_file: Path = field(default=Path("predictions.csv"))
+
+    @property
+    def train_images(self) -> Path:
+        return self.dir / self.train_images_dir
+
+    @property
+    def train_labels(self) -> Path:
+        return self.dir / self.train_labels_file
+
+    @property
+    def test_images(self) -> Path:
+        return self.dir / self.test_images_dir
+
+    @property
+    def test_labels(self) -> Path:
+        return self.dir / self.test_labels_file
+
+    @property
+    def solutions(self) -> Path:
+        return self.dir / self.solutions_file
+
+    @property
+    def predictions(self) -> Path:
+        return self.dir / "predictions" / self.predictions_file
 
 
 @dataclass
@@ -57,7 +90,15 @@ class ComputeConfig:
     workers: int = 8  # number of data loading workers
     batch_size: int = 128
     print_freq: int = 10
-    resume: Optional[str] = None  # path to latest checkpoint
+    resume: Optional[Path] = None  # path to latest checkpoint
+
+    def __post_init__(self):
+        if self.seed is not None:
+            self.seed = int(self.seed)
+            utils.set_random_seed(self.seed)
+
+        if not self.use_cuda:
+            torch.cuda.is_available = lambda: False
 
 
 @dataclass
@@ -66,12 +107,24 @@ class DistributedConfig:
     # N processes per node, which has N GPUs. This is the
     # fastest way to use PyTorch for either single node or
     # multi node data parallel training
+    use: bool = False
     multiprocessing_distributed: bool = False
     world_size: int = -1  # number of nodes for distributed training
     rank: int = -1  # node rank for distributed training
     dist_url: str = "tcp://224.66.41.62:23456"  # url used to set up distributed training
     dist_backend: str = "nccl"  # distributed backend
     gpu: Optional[int] = None  # GPU id to use
+    ngpus_per_node: Optional[int] = None
+
+    def __post_init__(self):
+        if self.gpu is not None:
+            warnings.warn(
+                "You have chosen a specific GPU. This will completely disable data parallelism."
+            )
+        if self.dist_url == "env://" and self.world_size == -1:
+            self.world_size = int(os.environ["WORLD_SIZE"])
+        self.use = self.world_size > 1 or self.multiprocessing_distributed
+        self.ngpus_per_node = torch.cuda.device_count()
 
 
 @dataclass
@@ -88,7 +141,14 @@ class PreprocessConfig:
     augmentation: bool = True
     rotate: bool = True
     flip: bool = True
-    colorjitter: bool = True
+    color_jitter: bool = True
+    color_jitter_factor: float = 0.1
+
+
+@dataclass
+class EnsemblingConfig:
+    use: bool = False
+    n_estimators: int = 50
 
 
 @dataclass
@@ -105,10 +165,11 @@ class TrainConfig:
 
 @dataclass
 class PredictConfig:
-    exp: ExpConfig = field(default_factory=ExpConfig)
+    exp: ExpConfig = field(default_factory=lambda: ExpConfig(test=True, evaluate=True))
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     compute: ComputeConfig = field(default_factory=ComputeConfig)
     distributed: DistributedConfig = field(default_factory=DistributedConfig)
-    template: str = "all_ones_benchmark.csv"
+    ensembling: EnsemblingConfig = field(default_factory=EnsemblingConfig)
+    template: Path = field(default=Path("all_ones_benchmark.csv"))
     output: Path = field(default="predictions/predictions.csv")

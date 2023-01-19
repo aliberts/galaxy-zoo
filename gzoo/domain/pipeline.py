@@ -1,148 +1,250 @@
+import logging
+import os
 import shutil
-from os import path as osp
+from pathlib import Path
+from typing import TypeAlias, Union
 
 import torch
-import torch.backends.cudnn as cudnn
+import torch.distributed as dist
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.optim import Optimizer
+from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 import wandb
-from gzoo.domain.model import create_model, load_model
-from gzoo.infra import utils
+from gzoo.domain.model import CustomNet, Model, Random, ResNet
+from gzoo.infra.config import ComputeConfig, DistributedConfig, PredictConfig, TrainConfig
 from gzoo.infra.data import GalaxyTestSet, GalaxyTrainSet, imagenet
 
+Loss: TypeAlias = Union[nn.CrossEntropyLoss, "RMSELoss"]
 
-def build_train(opt, ngpus_per_node):
-    model = create_model(opt)
-    model, opt = utils.setup_cuda(model, opt, ngpus_per_node)
 
-    # Make the data
-    if opt.dataset.name == "imagenet":
-        train_dataset, val_dataset = imagenet(opt)
+def setup_cuda(
+    model: Model,
+    cfg: TrainConfig | PredictConfig,
+) -> tuple[Model, ComputeConfig]:
+    if not torch.cuda.is_available():
+        print("using CPU, this will be slow")
+    elif cfg.distributed.use:
+        # For multiprocessing distributed, DistributedDataParallel constructor
+        # should always set the single device scope, otherwise,
+        # DistributedDataParallel will use all available devices.
+        if cfg.distributed.gpu is not None:
+            torch.cuda.set_device(cfg.distributed.gpu)
+            model.cuda(cfg.distributed.gpu)
+            # When using a single GPU per process and per
+            # DistributedDataParallel, we need to divide the batch size
+            # ourselves based on the total number of GPUs we have
+            cfg.compute.batch_size = int(cfg.compute.batch_size / cfg.distributed.ngpus_per_node)
+            cfg.compute.workers = int(
+                (cfg.compute.workers + cfg.distributed.ngpus_per_node - 1)
+                / cfg.distributed.ngpus_per_node
+            )
+            model = torch.nn.parallel.DistributedDataParallel(
+                model, device_ids=[cfg.distributed.gpu]
+            )
+        else:
+            model.cuda()
+            # DistributedDataParallel will divide and allocate batch_size to all
+            # available GPUs if device_ids are not set
+            model = torch.nn.parallel.DistributedDataParallel(model)
+    elif cfg.distributed.gpu is not None:
+        torch.cuda.set_device(cfg.distributed.gpu)
+        model = model.cuda(cfg.distributed.gpu)
     else:
-        train_dataset = GalaxyTrainSet("train", opt)
-        val_dataset = GalaxyTrainSet("val", opt)
+        # DataParallel will divide and allocate batch_size to all available GPUs
+        model_name = cfg.model.arch
+        if model_name.startswith("alexnet") or model_name.startswith("vgg"):
+            model.features = torch.nn.DataParallel(model.features)
+            model.cuda()
+        else:
+            model = torch.nn.DataParallel(model).cuda()
 
-    if opt.distribute:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    return model, cfg.compute
+
+
+def setup_distributed(gpu: int | None, dist_cfg: DistributedConfig) -> DistributedConfig:
+    if dist_cfg.gpu is not None:
+        logging.info(f"Use GPU: {dist_cfg.gpu}")
+
+    if dist_cfg.use:
+        if dist_cfg.dist_url == "env://" and dist_cfg.rank == -1:
+            dist_cfg.rank = int(os.environ["RANK"])
+        if dist_cfg.multiprocessing_distributed:
+            # For multiprocessing distributed training, rank needs to be the
+            # global rank among all the processes
+            dist_cfg.rank = dist_cfg.rank * dist_cfg.ngpus_per_node + gpu
+        dist.init_process_group(
+            backend=dist_cfg.dist_backend,
+            init_method=dist_cfg.dist_url,
+            world_size=dist_cfg.world_size,
+            rank=dist_cfg.rank,
+        )
+    return dist_cfg
+
+
+def create_model(cfg: TrainConfig | PredictConfig) -> Model:
+    if cfg.model.arch.startswith("resnet"):
+        model = ResNet(cfg)
+    elif cfg.model.arch.startswith("custom"):
+        model = CustomNet(cfg)
+    elif cfg.model.arch == "random":
+        model = Random(cfg)
+    else:
+        raise NotImplementedError
+    return model
+
+
+def load_model(cfg: TrainConfig, model: Model) -> Model:
+    if cfg.model.path:
+        pth = cfg.model.path
+    else:
+        pth = Path(f"models/{cfg.model.arch}.pth.tar")
+
+    if not pth.is_file():
+        raise FileNotFoundError(f"=> model checkpoint not found at '{pth}'")
+
+    if not cfg.compute.use_cuda:
+        checkpoint = torch.load(pth, map_location=torch.device("cpu"))
+        model = nn.DataParallel(model)
+    elif cfg.distributed.gpu is None:
+        checkpoint = torch.load(pth)
+    else:
+        # Map model to be loaded to specified single gpu.
+        loc = f"cuda:{cfg.distributed.gpu}"
+        checkpoint = torch.load(pth, map_location=loc)
+
+    model.load_state_dict(checkpoint["state_dict"])
+    print(f"=> loaded model '{pth}'")
+    return model
+
+
+def make_train_dataset(
+    cfg: TrainConfig,
+) -> tuple[DataLoader, DataLoader, DistributedSampler | None]:
+    if cfg.dataset.name == "imagenet":
+        train_dataset, val_dataset = imagenet(cfg)
+    else:
+        train_dataset = GalaxyTrainSet("train", cfg)
+        val_dataset = GalaxyTrainSet("val", cfg)
+
+    if cfg.distributed.use:
+        train_sampler = DistributedSampler(train_dataset)
     else:
         train_sampler = None
 
-    train_loader = torch.utils.data.DataLoader(
+    train_loader = DataLoader(
         train_dataset,
-        batch_size=opt.compute.batch_size,
+        batch_size=cfg.compute.batch_size,
         shuffle=(train_sampler is None),
-        num_workers=opt.compute.workers,
+        num_workers=cfg.compute.workers,
         pin_memory=True,
         sampler=train_sampler,
     )
 
-    val_loader = torch.utils.data.DataLoader(
+    val_loader = DataLoader(
         val_dataset,
-        batch_size=opt.compute.batch_size,
+        batch_size=cfg.compute.batch_size,
         shuffle=False,
-        num_workers=opt.compute.workers,
+        num_workers=cfg.compute.workers,
         pin_memory=True,
     )
 
-    # Make loss function and optimizer
-    # https://discuss.pytorch.org/t/what-is-the-weight-values-mean-in-torch-nn-crossentropyloss/11455/10
-    if opt.exp.task == "classification":
-        n_samples = [8014, 7665, 550, 3708, 7416]
-        # weights = [max(n_samples) / x for x in n_samples]
-        weights = [1.0 - x / sum(n_samples) for x in n_samples]
-        weights = torch.FloatTensor(weights).cuda(opt.distributed.gpu)
-        criterion = nn.CrossEntropyLoss(weight=weights).cuda(opt.distributed.gpu)
-    elif opt.exp.task == "regression":
-        criterion = RMSELoss().cuda(opt.distributed.gpu)
+    return train_loader, val_loader, train_sampler
 
-    if opt.model.arch == "random":
+
+def make_test_dataset(cfg: PredictConfig) -> DataLoader:
+    test_dataset = GalaxyTestSet(cfg)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=cfg.compute.batch_size,
+        shuffle=False,
+        num_workers=cfg.compute.workers,
+        pin_memory=True,
+    )
+    return test_loader
+
+
+def make_criterion(cfg: TrainConfig | PredictConfig) -> Loss:
+    if cfg.exp.task == "classification":
+        if isinstance(cfg, TrainConfig):
+            # https://discuss.pytorch.org/t/11455/10
+            n_samples = [8014, 7665, 550, 3708, 7416]
+            # weights = [max(n_samples) / x for x in n_samples]
+            weights = [1.0 - x / sum(n_samples) for x in n_samples]
+            weights = torch.FloatTensor(weights).cuda(cfg.distributed.gpu)
+        else:
+            weights = None
+        criterion = nn.CrossEntropyLoss(weight=weights).cuda(cfg.distributed.gpu)
+    elif cfg.exp.task == "regression":
+        criterion = RMSELoss().cuda(cfg.distributed.gpu)
+    return criterion
+
+
+def make_optimizer(cfg: TrainConfig, model: Model) -> Optimizer:
+    if cfg.model.arch == "random":
         optimizer = None
-    elif opt.optimizer.name == "adam":
-        optimizer = torch.optim.Adam(model.parameters(), opt.optimizer.lr)
-    elif opt.optimizer.name == "sgd":
+    elif cfg.optimizer.name == "adam":
+        optimizer = torch.optim.Adam(model.parameters(), cfg.optimizer.lr)
+    elif cfg.optimizer.name == "sgd":
         optimizer = torch.optim.SGD(
             model.parameters(),
-            opt.optimizer.lr,
-            momentum=opt.optimizer.momentum,
-            weight_decay=opt.optimizer.weight_decay,
+            cfg.optimizer.lr,
+            momentum=cfg.optimizer.momentum,
+            weight_decay=cfg.optimizer.weight_decay,
         )
-
-    # optionally resume from a checkpoint
-    if opt.compute.resume:
-        model, optimizer = resume_from_checkpoint(opt, model, optimizer)
-
-    cudnn.benchmark = True
-    return model, train_loader, val_loader, train_sampler, criterion, optimizer
+    return optimizer
 
 
-def build_eval(opt, ngpus_per_node):
-    model = create_model(opt)
-    model, opt = utils.setup_cuda(model, opt, ngpus_per_node)
-    model = load_model(opt, model)
-
-    test_dataset = GalaxyTestSet(opt)
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=opt.compute.batch_size,
-        shuffle=False,
-        num_workers=opt.compute.workers,
-        pin_memory=True,
-    )
-    # Make loss function and optimizer
-    if opt.exp.task == "classification":
-        criterion = nn.CrossEntropyLoss().cuda(opt.distributed.gpu)
-    elif opt.exp.task == "regression":
-        criterion = RMSELoss().cuda(opt.distributed.gpu)
-
-    cudnn.benchmark = True
-    return model, test_loader, criterion
-
-
-def save_checkpoint(log_dir, state, model, is_best, opt):
-    filename = osp.join(log_dir, "checkpoint.pth.tar")
-    torch.save(state, filename)
+def save_checkpoint(
+    log_dir: Path, state: dict, model: Model, is_best: bool, cfg: TrainConfig
+) -> None:
+    file_path = log_dir / "checkpoint.pth.tar"
+    torch.save(state, file_path)
     if is_best:
-        model_name = osp.join(log_dir, opt.model.arch)
-        shutil.copyfile(filename, model_name + ".pth.tar")
-        if opt.wandb.use:
+        model_path = log_dir / cfg.model.arch
+        shutil.copyfile(file_path, model_path.with_suffix(".pth.tar"))
+        if cfg.wandb.use:
             # onnx export to display in W&B
             device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             dummy = Variable(torch.randn(1, 3, 224, 224))
             dummy = dummy.to(device)
-            torch.onnx.export(model.module, dummy, model_name + ".onnx")
-            wandb.save(model_name + ".onnx")
+            torch.onnx.export(model.module, dummy, model_path.with_suffix(".onnx"))
+            wandb.save(str(model_path.with_suffix(".onnx")))
 
 
-def resume_from_checkpoint(opt, model, optimizer):
-    if not osp.isfile(opt.compute.resume):
-        raise FileNotFoundError(f"=> no checkpoint found at '{opt.compute.resume}'")
+def resume_from_checkpoint(
+    cfg: TrainConfig, model: Model, optimizer: Optimizer
+) -> tuple[Model, Optimizer]:
+    if not cfg.compute.resume.is_file(cfg.compute.resume):
+        raise FileNotFoundError(f"=> no checkpoint found at '{cfg.compute.resume}'")
 
-    print(f"=> loading checkpoint '{opt.compute.resume}'")
-    if opt.distributed.gpu is None:
-        checkpoint = torch.load(opt.compute.resume)
+    print(f"=> loading checkpoint '{cfg.compute.resume}'")
+    if cfg.distributed.gpu is None:
+        checkpoint = torch.load(cfg.compute.resume)
     else:
         # Map model to be loaded to specified single gpu.
-        loc = f"cuda:{opt.distributed.gpu}"
-        checkpoint = torch.load(opt.compute.resume, map_location=loc)
-    opt.compute.start_epoch = checkpoint["epoch"]
+        loc = f"cuda:{cfg.distributed.gpu}"
+        checkpoint = torch.load(cfg.compute.resume, map_location=loc)
+    cfg.compute.start_epoch = checkpoint["epoch"]
     best_score = checkpoint["best_score"]
-    if opt.distributed.gpu is not None:
+    if cfg.distributed.gpu is not None:
         # best_score may be from a checkpoint from a different GPU
-        best_score = best_score.to(opt.distributed.gpu)
+        best_score = best_score.to(cfg.distributed.gpu)
     model.load_state_dict(checkpoint["state_dict"])
     optimizer.load_state_dict(checkpoint["optimizer"])
-    print(f"=> loaded checkpoint '{opt.compute.resume}' (epoch {checkpoint['epoch']})")
+    print(f"=> loaded checkpoint '{cfg.compute.resume}' (epoch {checkpoint['epoch']})")
 
     return model, optimizer
 
 
 class RMSELoss(torch.nn.Module):
     def __init__(self):
-        super(RMSELoss, self).__init__()
+        super().__init__()
         self.criterion = nn.MSELoss(reduction="none")
 
-    def forward(self, x, y):
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         eps = 1.0e-8
         loss = self.criterion(x, y)
         loss = loss.mean(axis=1)

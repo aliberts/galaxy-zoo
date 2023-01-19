@@ -1,33 +1,24 @@
-import os.path as osp
-from argparse import ArgumentParser, RawTextHelpFormatter
+"""
+Make Classification Labels
+Run this script to generate the labels used for the classification version of the problem.
+"""
 
 import numpy as np
 import pandas as pd
+import pyrallis
 from sklearn.model_selection import train_test_split
 
-TEST_SPLIT_RATIO = 0.1
-
-ABSTRACT = (
-    "Make Classification Labels\n\n"
-    "Run this script to generate the labels used for the\n"
-    "classification version of the problem.\n"
-    "To use this tool, please provide path to the dataset\n"
-    "directory (which contains `training_solutions_rev1.csv`)\n"
-    "as argument.\n"
-)
-
-parser = ArgumentParser(description=ABSTRACT, formatter_class=RawTextHelpFormatter)
-parser.add_argument("data_dir", type=str, metavar="PATH")
+from gzoo.infra.config import TrainConfig
 
 
-def main():
-    args = parser.parse_args()
-    in_path = osp.join(args.data_dir, "training_solutions_rev1.csv")
-    reg_labels = pd.read_csv(in_path, sep=",", index_col="GalaxyID")
+@pyrallis.wrap(config_path="config/train.yaml")
+def main(cfg: TrainConfig) -> None:
+    reg_labels = pd.read_csv(cfg.dataset.solutions, sep=",", index_col="GalaxyID")
     clf_labels = pd.DataFrame()
     clf_labels = clf_labels.assign(
         # fmt: off
         **{
+            # See https://arxiv.org/pdf/1308.3496.pdf, Table 3
             "completely_round_smooth":
                 (reg_labels["Class1.1"] >= 0.469) & (reg_labels["Class7.1"] >= 0.5),
             "in_between_smooth":
@@ -47,7 +38,7 @@ def main():
 
     clf_labels_train_val, clf_labels_test = train_test_split(
         clf_labels,
-        test_size=TEST_SPLIT_RATIO,
+        test_size=cfg.dataset.test_split_ratio,
         random_state=0,
         stratify=clf_labels,
     )
@@ -62,15 +53,13 @@ def main():
     clf_labels_train_val = get_classes_number(clf_labels_train_val)
     clf_labels_test = get_classes_number(clf_labels_test)
 
-    out_path = osp.join(args.data_dir, "classification_labels_train_val.csv")
-    clf_labels_train_val.to_csv(out_path, sep=",")
-    print(f"classification labels writen to {out_path}.")
-    out_path = osp.join(args.data_dir, "classification_labels_test.csv")
-    clf_labels_test.to_csv(out_path, sep=",")
-    print(f"classification labels writen to {out_path}.")
+    clf_labels_train_val.to_csv(cfg.dataset.train_labels, sep=",")
+    print(f"classification labels writen to {cfg.dataset.train_labels}.")
+    clf_labels_test.to_csv(cfg.dataset.test_labels, sep=",")
+    print(f"classification labels writen to {cfg.dataset.test_labels}.")
 
 
-def get_classes_number(df):
+def get_classes_number(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = np.arange(0, len(df.columns))
     df = df.dot(df.columns.T)
     return df

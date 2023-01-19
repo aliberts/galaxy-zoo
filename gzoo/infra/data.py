@@ -1,25 +1,25 @@
 import glob
-from os import path as osp
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import PIL.Image as Image
 import torch
-import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
+from torchvision.datasets import ImageFolder
+from torchvision.transforms.transforms import Compose
+
+from gzoo.infra.config import PredictConfig, PreprocessConfig, TrainConfig
 
 # from torchvision.utils import save_image
 
-VAL_SPLIT_RATIO = 0.10
-COLOR_JITTER_FACTOR = 0.10
 
-
-def pil_loader(path):
+def pil_loader(path: Path) -> Image:
     # open path as file to avoid ResourceWarning
     # (https://github.com/python-pillow/Pillow/issues/835)
-    with open(path, "rb") as f, Image.open(f) as img:
+    with path.open("rb") as f, Image.open(f) as img:
         return img.convert("RGB")
 
 
@@ -28,34 +28,34 @@ class GalaxyTrainSet(Dataset):
 
     Args:
         split (str): "train", "val"
-        opt (namespace): options from config
+        cfg (namespace): options from config
 
     Returns (__getitem__):
         image (torch.Tensor)
         label (torch.Tensor)
     """
 
-    def __init__(self, split, opt):
-        super(GalaxyTrainSet, self).__init__()
+    def __init__(self, split: str, cfg: TrainConfig):
+        super().__init__()
         self.split = split
-        self.task = opt.exp.task
-        self.seed = opt.compute.seed if opt.compute.seed is not None else 0
-        self.datadir = opt.dataset.dir
-        if not osp.exists(self.datadir):
+        self.val_split_ratio = cfg.dataset.val_split_ratio
+        self.task = cfg.exp.task
+        self.seed = cfg.compute.seed if cfg.compute.seed is not None else 0
+        if not cfg.dataset.dir.exists():
             raise FileNotFoundError(
                 "Please download them from "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
-        self.image_dir = osp.join(self.datadir, opt.dataset.images)
-        self.label_file = osp.join(self.datadir, opt.dataset.train_labels)
-        if opt.exp.evaluate:
-            self.label_file = osp.join(self.datadir, opt.dataset.test_labels)
+        self.image_dir = cfg.dataset.train_images
+        self.label_file = cfg.dataset.train_labels
+        if cfg.exp.evaluate:
+            self.label_file = cfg.dataset.test_labels
 
         df = pd.read_csv(self.label_file, header=0, sep=",")
-        self.indexes, self.labels = self._split_dataset(df, opt.exp.evaluate)
-        self.image_tf = self._build_transforms(opt)
+        self.indexes, self.labels = self._split_dataset(df, cfg.exp.evaluate)
+        self.image_tf = self._build_transforms(cfg.preprocess)
 
-    def _split_dataset(self, df, evaluate):
+    def _split_dataset(self, df: pd.DataFrame, evaluate: bool) -> tuple[pd.DataFrame, pd.DataFrame]:
         indexes = df.iloc[:, 0]
         labels = df.iloc[:, 1:]
 
@@ -63,7 +63,7 @@ class GalaxyTrainSet(Dataset):
             idx_train, idx_val, lbl_train, lbl_val = train_test_split(
                 indexes,
                 labels,
-                test_size=VAL_SPLIT_RATIO,
+                test_size=self.val_split_ratio,
                 random_state=self.seed,
                 stratify=labels,
             )
@@ -76,7 +76,7 @@ class GalaxyTrainSet(Dataset):
 
         elif self.task == "regression" and not evaluate:
             indices = np.random.RandomState(seed=self.seed).permutation(indexes.shape[0])
-            val_len = int(len(indexes) * VAL_SPLIT_RATIO)
+            val_len = int(len(indexes) * self.val_split_ratio)
             val_idx, train_idx = indices[:val_len], indices[val_len:]
             if self.split == "train":
                 indexes = indexes[train_idx]
@@ -85,26 +85,26 @@ class GalaxyTrainSet(Dataset):
 
         return indexes.reset_index(drop=True), labels.reset_index(drop=True)
 
-    def _build_transforms(self, opt):
+    def _build_transforms(self, cfg: PreprocessConfig) -> Compose:
         image_tf = []
-        if self.split == "train" and opt.preprocess.augmentation:
-            if opt.preprocess.rotate:
+        if self.split == "train" and cfg.augmentation:
+            if cfg.rotate:
                 image_tf.append(transforms.RandomRotation(180))
-            if opt.preprocess.flip:
+            if cfg.flip:
                 image_tf.extend(
                     [
                         transforms.RandomHorizontalFlip(),
                         transforms.RandomVerticalFlip(),
                     ]
                 )
-            if opt.preprocess.colorjitter:
+            if cfg.color_jitter:
                 image_tf.extend(
                     [
                         transforms.ColorJitter(
-                            brightness=COLOR_JITTER_FACTOR,
-                            contrast=COLOR_JITTER_FACTOR,
-                            # saturation=COLOR_JITTER_FACTOR,
-                            # hue=COLOR_JITTER_FACTOR,
+                            brightness=cfg.color_jitter_factor,
+                            contrast=cfg.color_jitter_factor,
+                            # saturation=cfg.color_jitter_factor,
+                            # hue=cfg.color_jitter_factor,
                         ),
                     ]
                 )
@@ -116,9 +116,9 @@ class GalaxyTrainSet(Dataset):
         )
         return transforms.Compose(image_tf)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple[Image.Image, torch.tensor]:
         image_id = self.indexes.iloc[idx]
-        path = osp.join(self.image_dir, f"{image_id}.jpg")
+        path = self.image_dir / f"{image_id}.jpg"
         image = pil_loader(path)
         # -- DEBUG --
         # tens = transforms.ToTensor()
@@ -133,7 +133,7 @@ class GalaxyTrainSet(Dataset):
             label = torch.tensor(label).float()
         return image, label
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.indexes)
 
 
@@ -142,23 +142,22 @@ class GalaxyTestSet(Dataset):
 
     Args:
         split (str): "train", "val"
-        opt (namespace): options from config
+        cfg (namespace): options from config
 
     Returns (__getitem__):
         image (torch.Tensor)
         image_id (int)
     """
 
-    def __init__(self, opt):
-        super(GalaxyTestSet, self).__init__()
-        self.datadir = opt.dataset.dir
-        if not osp.exists(self.datadir):
+    def __init__(self, cfg: PredictConfig):
+        super().__init__()
+        if not cfg.dataset.dir.exists():
             raise FileNotFoundError(
                 "Please download them from "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
 
-        self.image_dir = osp.join(self.datadir, "images_test_rev1")
+        self.image_dir = cfg.dataset.test_images
         image_list = []
         for filename in glob.glob(f"{self.image_dir}/*.jpg"):
             idx = filename.split("/")[-1][:-4]
@@ -174,23 +173,24 @@ class GalaxyTestSet(Dataset):
         )
         self.image_tf = transforms.Compose(image_tf)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple[Image.Image, int]:
         image_id = self.indexes.iloc[idx]
-        path = osp.join(self.image_dir, f"{image_id}.jpg")
+        path = self.image_dir / f"{image_id}.jpg"
         image = pil_loader(path)
         image = self.image_tf(image)
         return image, image_id
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.indexes)
 
 
-def imagenet(opt):
-    traindir = osp.join(opt.dataset.dir, "train")
-    valdir = osp.join(opt.dataset.dir, "val")
+def imagenet(cfg: TrainConfig) -> tuple[ImageFolder, ImageFolder]:
+    traindir = cfg.dataset.dir / "train"
+    valdir = cfg.dataset.dir / "val"
+    # https://stackoverflow.com/questions/58151507
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-    train_set = datasets.ImageFolder(
+    train_set = ImageFolder(
         traindir,
         transforms.Compose(
             [
@@ -201,7 +201,7 @@ def imagenet(opt):
             ]
         ),
     )
-    test_set = datasets.ImageFolder(
+    test_set = ImageFolder(
         valdir,
         transforms.Compose(
             [
