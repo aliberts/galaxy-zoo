@@ -6,24 +6,37 @@
 </p>
 
 <p align="center">
-	<a href="https://www.python.org/downloads/release/python-380/">
-		<img src="https://img.shields.io/badge/python-3.10-blue"
+	<a href="https://www.python.org/downloads/release/python-3100/">
+		<img src="https://img.shields.io/badge/Python-3.10-blue"
 			 alt="Python Version">
 	</a>
 	<a href="https://pytorch.org/">
-		<img src="https://img.shields.io/badge/framework-pytorch-red"
+		<img src="https://img.shields.io/badge/Framework-PyTorch-red"
 			 alt="License">
 	</a>
 	<a href="https://github.com/psf/black">
-		<img src="https://img.shields.io/badge/code%20style-black-000000.svg"
+		<img src="https://img.shields.io/badge/Code%20style-Black-000000.svg"
 			 alt="Code Style">
+	</a>
+	<a href="https://wandb.ai/aliberts/galaxy-zoo?workspace=user-aliberts">
+		<img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-github-badge-28-gray.svg"
+			 alt="Weights & Biases"
+			 height="20">
 	</a>
 </p>
 
 This project is derived from an assignement I did during my bootcamp at Yotta Academy.
 It aims to classify the morphologies of distant galaxies using deep neural networks.
 
-It is based on the Kaggle [Galaxy Zoo Challenge](https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/overview).
+It is based on the [Kaggle Galaxy Zoo Challenge](https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/overview).
+
+Originaly posed as a regression problem in the Kaggle challenge, with formulate it here as a multiclass classification problem since this is eventually the goal behind the project. Additionaly, this has the added benefit to simplify things a bit.
+
+To better understand the task to be learned by the model, give it a go yourself: [try it here](https://www.zooniverse.org/projects/zookeeper/galaxy-zoo/classify).
+
+
+# Project & Results
+Checkout my experiments and the project's report on [Weights & Biases](https://wandb.ai/aliberts/galaxy-zoo?workspace=user-aliberts).
 
 
 # Documentation
@@ -31,8 +44,6 @@ A few related papers on the topic are available here:
 - [1308.3496](https://arxiv.org/abs/1308.3496)
 - [1807.10406](https://arxiv.org/abs/1807.10406)
 - [1809.01691](https://arxiv.org/abs/1809.01691)
-
-To better understand the task to be learned by the model, give it a go yourself: [try it here](https://www.zooniverse.org/projects/zookeeper/galaxy-zoo/classify).
 
 
 # Installation
@@ -42,20 +53,20 @@ To better understand the task to be learned by the model, give it a go yourself:
 nvidia-smi
 ```
 
-2. (optional) Install [poetry](https://python-poetry.org/) if you don't have it already (I highly recommend it!):
+2. If you don't have it already — I highly recommend it! — install [poetry](https://python-poetry.org/):
 ```bash
 make setup-poetry
 ```
 
 3. Set yourself a virtual environment with python 3.10, e.g. using [miniconda](https://docs.conda.io/en/latest/miniconda.html) (easier IMO):
 ```bash
-conda create --yes --name gzoo python=3.10  # miniconda
+conda create --yes --name gzoo python=3.10
 conda activate gzoo
 ```
 
 or [pyenv](https://github.com/pyenv/pyenv):
 ```bash
-pyenv install 3.10:latest  # pyenv
+pyenv install 3.10:latest
 pyenv local 3.10:latest  # run in this directory
 ```
 
@@ -68,14 +79,18 @@ poetry install
 ```bash
 make dataset
 ```
-This will download and extract the archives into `dataset/`. You'll need to login with [Kaggle's API](https://github.com/Kaggle/kaggle-api) first and place your `kaggle.json` api key inside `~/.kaggle` by default.
+This will download and extract the archives into `dataset/`. You'll need to login with [Kaggle's API](https://github.com/Kaggle/kaggle-api#api-credentials) first and place your `kaggle.json` api key inside `~/.kaggle` by default.
+You can also do it manually by downloading it [here](https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data). Don't forget to update the location of the directory you put it in with the `dataset.dir` config option.
 
-6. (optional) Make your commands shorter with this `alias`:
+
+### Optional
+
+6. Make your commands shorter with this `alias`:
 ```bash
 alias py='poetry run python'
 ```
 
-7. (optional) If you intend to contribute in this repo, run:
+7. If you intend to contribute in this repo, install the pre-commit hooks with:
 ```bash
 pre-commit install
 ```
@@ -84,13 +99,13 @@ You're good to go!
 
 
 # Training
-## Create the training labels for classification
+### Create the training labels for classification
 ```bash
 poetry run python -m gzoo.app.make_labels
 ```
 This will produce the files `classification_labels_train_val.csv` and `classification_labels_test.csv` inside `dataset/`, which are needed for training and testing.
 
-## Run the classification pipeline
+### Run the classification pipeline
 ```bash
 poetry run python -m gzoo.app.train
 ```
