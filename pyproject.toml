@@ -18,6 +18,7 @@ scikit-learn = "^1.2.0"
 matplotlib = "^3.6.2"
 kaggle = "^1.5.12"
 pyrallis = "^0.3.1"
+fastai = "^2.7.10"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^2.20.0"
