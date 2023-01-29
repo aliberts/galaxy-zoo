@@ -40,12 +40,31 @@ class DatasetConfig:
     dir: Path = field(default=Path("dataset/"))
     test_split_ratio: float = 0.1  # test / (train + val) ratio
     val_split_ratio: float = 0.1  # val / train ratio
+    class_names: list = field(
+        default_factory=lambda: [
+            "completely_round_smooth",
+            "in_between_smooth",
+            "cigar_shaped_smooth",
+            "edge_on",
+            "spiral",
+        ]
+    )
+    images_clf_dir: Path = field(default=Path("images_clf"))
+    labels_file: Path = field(default=Path("classification_labels.csv"))
     train_images_dir: Path = field(default=Path("images_training_rev1"))
     train_labels_file: Path = field(default=Path("classification_labels_train_val.csv"))
     test_images_dir: Path = field(default=Path("images_test_rev1"))
     test_labels_file: Path = field(default=Path("classification_labels_test.csv"))
     solutions_file: Path = field(default=Path("training_solutions_rev1.csv"))
     predictions_file: Path = field(default=Path("predictions.csv"))
+
+    @property
+    def images_clf(self) -> Path:
+        return self.dir / self.images_clf_dir
+
+    @property
+    def labels(self) -> Path:
+        return self.dir / self.labels_file
 
     @property
     def train_images(self) -> Path:
@@ -149,6 +168,12 @@ class PreprocessConfig:
 class EnsemblingConfig:
     use: bool = False
     n_estimators: int = 50
+
+
+@dataclass
+class EDAConfig:
+    wandb: WandBConfig = field(default_factory=WandBConfig)
+    dataset: DatasetConfig = field(default_factory=DatasetConfig)
 
 
 @dataclass

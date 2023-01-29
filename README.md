@@ -103,7 +103,7 @@ You're good to go!
 ```bash
 poetry run python -m gzoo.app.make_labels
 ```
-This will produce the files `classification_labels_train_val.csv` and `classification_labels_test.csv` inside `dataset/`, which are needed for training and testing.
+This will produce the `classification_labels.csv` file inside `dataset/`, which is needed for training. These class labels are produced from the original regression labels in `training_solutions_rev1.csv`.
 
 ### Run the classification pipeline
 ```bash
