@@ -48,49 +48,53 @@ A few related papers on the topic are available here:
 
 # Installation
 
-1. Ensure your gpu driver & cuda are properly setup for pytorch to use it (the name of your device should appear):
+#### Step 1
+Ensure your gpu driver & cuda are properly setup for pytorch to use it (the name of your device should appear):
 ```bash
 nvidia-smi
 ```
 
-2. If you don't have it already — I highly recommend it! — install [poetry](https://python-poetry.org/):
+#### Step 2
+If you don't have it already — I highly recommend it! — install [poetry](https://python-poetry.org/):
 ```bash
 make setup-poetry
 ```
 
-3. Set yourself a virtual environment with python 3.10, e.g. using [miniconda](https://docs.conda.io/en/latest/miniconda.html) (easier IMO):
+#### Step 3
+Setup the environment with python 3.10, e.g. using [miniconda](https://docs.conda.io/en/latest/miniconda.html) (easier IMO):
 ```bash
+git clone git@github.com:aliberts/galaxy-zoo.git
+cd galaxy-zoo
 conda create --yes --name gzoo python=3.10
 conda activate gzoo
+poetry install
 ```
 
 or [pyenv](https://github.com/pyenv/pyenv):
 ```bash
+git clone git@github.com:aliberts/galaxy-zoo.git
+cd galaxy-zoo
 pyenv install 3.10:latest
-pyenv local 3.10:latest  # run in this directory
-```
-
-4. Within this environment, install the project's dependencies:
-```bash
+pyenv local 3.10:latest
 poetry install
 ```
 
-5. To download the dataset, run:
+#### Step 4
+Download the dataset:
 ```bash
 make dataset
 ```
-This will download and extract the archives into `dataset/`. You'll need to login with [Kaggle's API](https://github.com/Kaggle/kaggle-api#api-credentials) first and place your `kaggle.json` api key inside `~/.kaggle` by default.
-You can also do it manually by downloading it [here](https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data). Don't forget to update the location of the directory you put it in with the `dataset.dir` config option.
+This will download and extract the archives into `dataset/`. You'll need to login with [Kaggle's API](https://github.com/Kaggle/kaggle-api#api-credentials) first and place your `kaggle.json` api key inside `~/.kaggle` by default. \
+You can also do it manually by downloading it [here](https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data). In that case, don't forget to update the location of the directory you put it in with the `dataset.dir` [config](config/train.yaml) option.
 
 
-### Optional
-
-6. Make your commands shorter with this `alias`:
+#### Optional
+Make your commands shorter with this `alias`:
 ```bash
 alias py='poetry run python'
 ```
 
-7. If you intend to contribute in this repo, install the pre-commit hooks with:
+If you intend to contribute in this repo, install the pre-commit hooks with:
 ```bash
 pre-commit install
 ```
