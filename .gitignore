@@ -4,6 +4,7 @@
 
 # Data
 dataset/
+artifacts/
 *.csv
 !example/all_ones_benchmark.csv
 
