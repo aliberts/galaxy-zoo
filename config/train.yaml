@@ -8,16 +8,23 @@ compute:
   use_cuda: true
   workers: 8
 dataset:
+  class_names:
+  - completely_round_smooth
+  - in_between_smooth
+  - cigar_shaped_smooth
+  - edge_on
+  - spiral
+  clf_images_dir: clf_images
+  clf_labels_file: clf_labels.csv
   dir: dataset
   name: galaxy-zoo
   predictions_file: predictions.csv
-  solutions_file: training_solutions_rev1.csv
-  test_images_dir: images_test_rev1
-  test_labels_file: classification_labels_test.csv
+  reg_images_test_dir: images_test_rev1
+  reg_images_train_dir: images_training_rev1
+  reg_labels_file: training_solutions_rev1.csv
   test_split_ratio: 0.1
-  train_images_dir: images_training_rev1
-  train_labels_file: classification_labels_train_val.csv
   val_split_ratio: 0.1
+debug: false
 distributed:
   dist_backend: nccl
   dist_url: tcp://224.66.41.62:23456
