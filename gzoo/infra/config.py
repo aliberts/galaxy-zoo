@@ -49,6 +49,7 @@ class DatasetConfig:
             "spiral",
         ]
     )
+    eda_table: str = "eda_table"
     clf_images_dir: Path = field(default=Path("clf_images"))
     clf_labels_file: Path = field(default=Path("clf_labels.csv"))
     reg_images_train_dir: Path = field(default=Path("images_training_rev1"))

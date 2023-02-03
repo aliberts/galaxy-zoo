@@ -26,8 +26,8 @@ def main(cfg: UploadConfig) -> None:
         image_files = image_files[:10]
     table = create_wandb_table(cfg, image_files)
 
-    dataset.add(table, "eda_table")
-    run.log_artifact(dataset, aliases=["classification"])
+    dataset.add(table, cfg.dataset.eda_table)
+    run.log_artifact(dataset)
     run.finish()
 
 
