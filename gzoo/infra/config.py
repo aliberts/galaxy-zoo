@@ -49,42 +49,36 @@ class DatasetConfig:
             "spiral",
         ]
     )
-    images_clf_dir: Path = field(default=Path("images_clf"))
-    labels_file: Path = field(default=Path("classification_labels.csv"))
-    train_images_dir: Path = field(default=Path("images_training_rev1"))
-    train_labels_file: Path = field(default=Path("classification_labels_train_val.csv"))
-    test_images_dir: Path = field(default=Path("images_test_rev1"))
-    test_labels_file: Path = field(default=Path("classification_labels_test.csv"))
-    solutions_file: Path = field(default=Path("training_solutions_rev1.csv"))
+    clf_images_dir: Path = field(default=Path("clf_images"))
+    clf_labels_file: Path = field(default=Path("clf_labels.csv"))
+    reg_images_train_dir: Path = field(default=Path("images_training_rev1"))
+    reg_images_test_dir: Path = field(default=Path("images_test_rev1"))
+    reg_labels_file: Path = field(default=Path("training_solutions_rev1.csv"))
     predictions_file: Path = field(default=Path("predictions.csv"))
 
     @property
-    def images_clf(self) -> Path:
-        return self.dir / self.images_clf_dir
+    def clf_name(self) -> Path:
+        return f"{self.name}-clf"
 
     @property
-    def labels(self) -> Path:
-        return self.dir / self.labels_file
+    def reg_name(self) -> Path:
+        return f"{self.name}-reg"
 
     @property
-    def train_images(self) -> Path:
-        return self.dir / self.train_images_dir
+    def clf_images(self) -> Path:
+        return self.dir / self.clf_images_dir
 
     @property
-    def train_labels(self) -> Path:
-        return self.dir / self.train_labels_file
+    def clf_labels(self) -> Path:
+        return self.dir / self.clf_labels_file
 
     @property
-    def test_images(self) -> Path:
-        return self.dir / self.test_images_dir
+    def reg_images_train(self) -> Path:
+        return self.dir / self.reg_images_train_dir
 
     @property
-    def test_labels(self) -> Path:
-        return self.dir / self.test_labels_file
-
-    @property
-    def solutions(self) -> Path:
-        return self.dir / self.solutions_file
+    def reg_labels(self) -> Path:
+        return self.dir / self.reg_labels_file
 
     @property
     def predictions(self) -> Path:
@@ -171,9 +165,10 @@ class EnsemblingConfig:
 
 
 @dataclass
-class EDAConfig:
+class UploadConfig:
     wandb: WandBConfig = field(default_factory=WandBConfig)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
+    debug: bool = False
 
 
 @dataclass
@@ -186,6 +181,7 @@ class TrainConfig:
     distributed: DistributedConfig = field(default_factory=DistributedConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
+    debug: bool = False
 
 
 @dataclass
@@ -198,3 +194,4 @@ class PredictConfig:
     ensembling: EnsemblingConfig = field(default_factory=EnsemblingConfig)
     template: Path = field(default=Path("all_ones_benchmark.csv"))
     output: Path = field(default="predictions/predictions.csv")
+    debug: bool = False
