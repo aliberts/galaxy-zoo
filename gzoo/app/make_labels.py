@@ -15,7 +15,7 @@ from gzoo.infra.config import TrainConfig
 
 @pyrallis.wrap(config_path="config/train.yaml")
 def main(cfg: TrainConfig) -> None:
-    reg_labels = pd.read_csv(cfg.dataset.solutions, sep=",", index_col="GalaxyID")
+    reg_labels = pd.read_csv(cfg.dataset.reg_labels, sep=",", index_col="GalaxyID")
     clf_labels = pd.DataFrame()
     clf_labels = clf_labels.assign(
         # fmt: off
@@ -43,10 +43,10 @@ def main(cfg: TrainConfig) -> None:
     clf_labels.name = "Class"
 
     image_list = clf_labels.index.to_list()
-    copy_images(image_list, cfg.dataset.train_images, cfg.dataset.images_clf)
+    copy_images(image_list, cfg.dataset.reg_images_train, cfg.dataset.clf_images)
 
-    clf_labels.to_csv(cfg.dataset.labels, sep=",")
-    print(f"Classification labels writen to {cfg.dataset.labels}.")
+    clf_labels.to_csv(cfg.dataset.clf_labels, sep=",")
+    print(f"Classification labels writen to {cfg.dataset.clf_labels}.")
 
     # clf_labels_train_val, clf_labels_test = train_test_split(
     #     clf_labels,
