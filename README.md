@@ -109,6 +109,13 @@ poetry run python -m gzoo.app.make_labels
 ```
 This will produce the `classification_labels.csv` file inside `dataset/`, which is needed for training. These class labels are produced from the original regression labels in `training_solutions_rev1.csv`.
 
+### Partition data for training
+```bash
+poetry run python -m gzoo.app.split_data
+```
+This will split the dataset into the training / validation / testing partitions and write those partitions in a `clf_labels_split.csv` file. The ratios used for the partitionning are set in the `dataset.test_split_ratio` and `dataset.val_split_ratio` config options.
+.
+
 ### Run the classification pipeline
 ```bash
 poetry run python -m gzoo.app.train
