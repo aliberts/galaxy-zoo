@@ -18,8 +18,8 @@ def main(cfg: UploadConfig) -> None:
     run = wandb.init(project=cfg.wandb.project, entity=cfg.wandb.entity, job_type="upload")
     dataset = wandb.Artifact(cfg.dataset.clf_name, type="dataset")
 
-    dataset.add_file(cfg.dataset.clf_labels, name=cfg.dataset.clf_labels_file.name)
-    dataset.add_dir(cfg.dataset.clf_images, name=cfg.dataset.clf_images_dir.name)
+    dataset.add_file(cfg.dataset.clf_labels)
+    dataset.add_dir(cfg.dataset.clf_images)
 
     image_files = get_image_files(cfg.dataset.clf_images, recurse=False)
     if cfg.debug:

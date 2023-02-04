@@ -19,8 +19,8 @@ def main(cfg: TrainConfig) -> None:
         version = "latest"
         if cfg.dataset.version is not None:
             version = cfg.dataset.version
-        dataset = run.use_artifact(f"{cfg.dataset.clf_name}:{version}")
 
+        dataset = run.use_artifact(f"{cfg.dataset.clf_name}:{version}")
         clf_labels_path = Path(dataset.get_path(cfg.dataset.clf_labels_file.name).download())
     else:
         clf_labels_path = cfg.dataset.clf_labels
@@ -99,7 +99,7 @@ def upload_data_split(
     cfg: DatasetConfig, run: Run, dataset: Artifact, data_split: pd.DataFrame
 ) -> None:
     """
-    Uploads data split to Weights & Biases under new version of the dataset artifact.
+    Uploads the data split to Weights & Biases under a new version of the dataset artifact.
     """
     eda_table = dataset.get(cfg.eda_table)
     dataset_path = Path(dataset.download())
