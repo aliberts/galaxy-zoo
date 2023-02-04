@@ -30,7 +30,7 @@ def main(cfg: TrainConfig) -> None:
         clf_labels_df, cfg.dataset.test_split_ratio, cfg.dataset.val_split_ratio
     )
     print_split_summary(clf_labels_split_df)
-    clf_labels_split_df.to_csv(cfg.dataset.clf_labels_split, index=False)
+    clf_labels_split_df.to_csv(cfg.dataset.clf_labels_split)
     print(f"Data split written to {cfg.dataset.clf_labels_split}")
 
     if cfg.wandb.use:
