@@ -38,6 +38,7 @@ class WandBConfig:
 class DatasetConfig:
     name: str = "galaxy-zoo"
     dir: Path = field(default=Path("dataset/"))
+    version: Optional[str] = None
     test_split_ratio: float = 0.1  # test / (train + val) ratio
     val_split_ratio: float = 0.1  # val / train ratio
     class_names: list = field(
@@ -50,6 +51,8 @@ class DatasetConfig:
         ]
     )
     eda_table: str = "eda_table"
+    eda_table_split: str = "eda_table_split"
+    clf_labels_split_file: Path = field(default=Path("clf_labels_split.csv"))
     clf_images_dir: Path = field(default=Path("clf_images"))
     clf_labels_file: Path = field(default=Path("clf_labels.csv"))
     reg_images_train_dir: Path = field(default=Path("images_training_rev1"))
@@ -64,6 +67,10 @@ class DatasetConfig:
     @property
     def reg_name(self) -> Path:
         return f"{self.name}-reg"
+
+    @property
+    def clf_labels_split(self) -> Path:
+        return self.dir / self.clf_labels_split_file
 
     @property
     def clf_images(self) -> Path:
