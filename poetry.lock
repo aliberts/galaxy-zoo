@@ -1929,6 +1929,21 @@ files = [
 catalogue = ">=2.0.3,<2.1.0"
 
 [[package]]
+name = "termgraph"
+version = "0.5.3"
+description = "A command-line tool that draws basic graphs in the terminal."
+category = "main"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "termgraph-0.5.3-py3-none-any.whl", hash = "sha256:c181c168c2278a7f7161de05b1033396a2f6b06ab260ddf987b0320fae93ff8e"},
+    {file = "termgraph-0.5.3.tar.gz", hash = "sha256:36ff2098e41eeab1e7cdda7366dc3e5b514ea799fa3e77537564492a7edefdd5"},
+]
+
+[package.dependencies]
+colorama = "*"
+
+[[package]]
 name = "text-unidecode"
 version = "1.3"
 description = "The most basic Text::Unidecode port"
@@ -2286,4 +2301,4 @@ test = ["pytest (>=3.0.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "3a0c43185fa5d0f2867acaa84ae6e99eea57ba79f4749eae81a0af734f1de873"
+content-hash = "54a22d7bb26079459eabae7ed0fddb2c743277a1864558e8363010235a0c25f3"
