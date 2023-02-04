@@ -48,28 +48,6 @@ def main(cfg: TrainConfig) -> None:
     clf_labels.to_csv(cfg.dataset.clf_labels, sep=",")
     print(f"Classification labels writen to {cfg.dataset.clf_labels}.")
 
-    # clf_labels_train_val, clf_labels_test = train_test_split(
-    #     clf_labels,
-    #     test_size=cfg.dataset.test_split_ratio,
-    #     random_state=0,
-    #     stratify=clf_labels,
-    # )
-    # print("--- train/val labels distribution ---")
-    # print(clf_labels_train_val.sum())
-    # print(f"\ntotal examples: {clf_labels_train_val.sum().sum()}\n")
-    # print("----- test labels distribution -----")
-    # print(clf_labels_test.sum())
-    # print(f"\ntotal examples: {clf_labels_test.sum().sum()}\n")
-
-    # # Actually write one column with the number of classes
-    # clf_labels_train_val = get_classes_number(clf_labels_train_val)
-    # clf_labels_test = get_classes_number(clf_labels_test)
-
-    # clf_labels_train_val.to_csv(cfg.dataset.train_labels, sep=",")
-    # print(f"classification labels writen to {cfg.dataset.train_labels}.")
-    # clf_labels_test.to_csv(cfg.dataset.test_labels, sep=",")
-    # print(f"classification labels writen to {cfg.dataset.test_labels}.")
-
 
 def copy_images(image_names: list[int], from_: Path, to_: Path) -> None:
     to_.mkdir(exist_ok=True)
