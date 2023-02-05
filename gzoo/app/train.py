@@ -3,9 +3,7 @@ Inspired by https://github.com/pytorch/examples/blob/main/imagenet/main.py
 """
 
 import logging
-import pprint
 import time
-from dataclasses import asdict
 from pathlib import Path
 
 import pyrallis
@@ -19,14 +17,14 @@ import torch.utils.data.distributed
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
+from wandb.sdk.wandb_run import Run
 
 import wandb
 from gzoo.domain import pipeline
 from gzoo.domain.model import Model
 from gzoo.domain.pipeline import Loss
 from gzoo.infra.config import TrainConfig
-from gzoo.infra.logging import Log
-from gzoo.infra.utils import AverageMeter, ProgressMeter
+from gzoo.infra.utils import AverageMeter, ProgressMeter, setup_train_log, setup_wandb_run
 
 NB_CLASSES = 5
 
@@ -40,13 +38,11 @@ val_batch_ct = 0
 @pyrallis.wrap(config_path="config/train.yaml")
 def main(cfg: TrainConfig) -> None:
 
+    run = None
     if cfg.wandb.use:
-        wandb.login()
+        run = setup_wandb_run(cfg)
 
-    log = Log("train", cfg.exp, cfg.model.arch)
-    log.toggle()
-    logging.debug("arguments:")
-    logging.debug(pprint.pformat(asdict(cfg)))
+    log = setup_train_log(cfg)
 
     if cfg.distributed.multiprocessing_distributed:
         # Since we have ngpus_per_node processes per node, the total world_size
@@ -57,14 +53,14 @@ def main(cfg: TrainConfig) -> None:
         mp.spawn(
             main_worker,
             nprocs=cfg.distributed.ngpus_per_node,
-            args=(cfg, log.dir),
+            args=(cfg, log.dir, run),
         )
     else:
         # Simply call main_worker function
-        main_worker(cfg.distributed.gpu, cfg, log.dir)
+        main_worker(cfg.distributed.gpu, cfg, log.dir, run)
 
 
-def main_worker(gpu: int | None, cfg: TrainConfig, log_dir: Path) -> None:
+def main_worker(gpu: int | None, cfg: TrainConfig, log_dir: Path, run: Run | None) -> None:
 
     cfg.distributed.gpu = gpu
     cfg.distributed = pipeline.setup_distributed(gpu, cfg.distributed)
@@ -72,7 +68,7 @@ def main_worker(gpu: int | None, cfg: TrainConfig, log_dir: Path) -> None:
     model = pipeline.create_model(cfg)
     model, cfg.compute = pipeline.setup_cuda(model, cfg)
 
-    train_loader, val_loader, train_sampler = pipeline.make_train_dataset(cfg)
+    train_loader, val_loader, train_sampler = pipeline.make_train_dataset(cfg, run)
 
     criterion = pipeline.make_criterion(cfg)
     optimizer = pipeline.make_optimizer(cfg, model)
@@ -88,43 +84,21 @@ def main_worker(gpu: int | None, cfg: TrainConfig, log_dir: Path) -> None:
         return
 
     if cfg.wandb.use:
-        with wandb.init(
-            name=cfg.wandb.run_name,
-            project=cfg.wandb.project,
-            entity=cfg.wandb.entity,
-            notes=cfg.wandb.note,
-            tags=cfg.wandb.tags,
-            config=asdict(cfg),
-        ):
-            if cfg.wandb.run_name is not None:
-                wandb.run_name = cfg.wandb.run_name
+        run.watch(model, criterion, log="all", log_freq=10)
 
-            wandb.watch(model, criterion, log="all", log_freq=10)
-            for epoch in range(cfg.compute.start_epoch, cfg.compute.epochs):
-                train_loop(
-                    train_loader,
-                    val_loader,
-                    train_sampler,
-                    model,
-                    criterion,
-                    optimizer,
-                    epoch,
-                    cfg,
-                    log_dir,
-                )
-    else:
-        for epoch in range(cfg.compute.start_epoch, cfg.compute.epochs):
-            train_loop(
-                train_loader,
-                val_loader,
-                train_sampler,
-                model,
-                criterion,
-                optimizer,
-                epoch,
-                cfg,
-                log_dir,
-            )
+    for epoch in range(cfg.compute.start_epoch, cfg.compute.epochs):
+        train_loop(
+            train_loader,
+            val_loader,
+            train_sampler,
+            model,
+            criterion,
+            optimizer,
+            epoch,
+            cfg,
+            log_dir,
+            run,
+        )
 
 
 def train_loop(
@@ -137,6 +111,7 @@ def train_loop(
     epoch: int,
     cfg: TrainConfig,
     log_dir: Path,
+    run: Run | None,
 ) -> None:
     global best_score
     if cfg.distributed.use:
@@ -151,6 +126,9 @@ def train_loop(
 
     # Evaluate on validation set
     val_loss, val_acc1, val_acc3 = validate(val_loader, model, criterion, cfg)
+    # val_loss, val_acc1, val_acc3, val_truth, val_pred = validate(
+    #     val_loader, model, criterion, cfg
+    # )
 
     # Remember best score and save checkpoint
     score = val_acc1
@@ -170,10 +148,16 @@ def train_loop(
                 "train-acc3": train_acc3,
                 "val-acc1": val_acc1,
                 "val-acc3": val_acc3,
+                # "conf_mat": wandb.plot.confusion_matrix(
+                #     probs=None,
+                #     y_true=val_truth,
+                #     preds=val_pred,
+                #     class_names=cfg.wandb.class_names_test,
+                # ),
             }
             metrics = {**metrics, **tmp}
-        wandb.log(metrics)
-        wandb.run.summary["accuracy"] = best_score
+        run.log(metrics)
+        run.summary["accuracy"] = best_score
 
     if (
         not cfg.distributed.multiprocessing_distributed
@@ -342,9 +326,9 @@ def validate(
             if i % cfg.compute.print_freq == 0:
                 progress.display(i)
 
-        logging.info(f" * Acc@1 {top1.avg:.3f} Acc@3 {top3.avg:.3f} Loss {losses.avg:.3f}")
-        logging.info(f"\n{confusion_matrix}")
-        logging.info(f"\n{confusion_matrix.diag()/confusion_matrix.sum(1)}")
+    logging.info(f" * Acc@1 {top1.avg:.3f} Acc@3 {top3.avg:.3f} Loss {losses.avg:.3f}")
+    logging.info(f"\n{confusion_matrix}")
+    logging.info(f"\n{confusion_matrix.diag()/confusion_matrix.sum(1)}")
 
     return losses.avg, top1.avg, top3.avg
 

@@ -1,9 +1,42 @@
+import logging
+import pprint
 import random
 import warnings
+from dataclasses import asdict
+from pathlib import Path
 
 import numpy
 import torch
 import torch.backends.cudnn as cudnn
+from PIL import Image
+from wandb.sdk.wandb_run import Run
+
+import wandb
+from gzoo.infra.config import TrainConfig
+from gzoo.infra.logging import Log
+
+
+def setup_wandb_run(cfg: TrainConfig) -> Run:
+    run = wandb.init(
+        name=cfg.wandb.run_name,
+        project=cfg.wandb.project,
+        entity=cfg.wandb.entity,
+        notes=cfg.wandb.note,
+        tags=cfg.wandb.tags,
+        config=asdict(cfg),
+    )
+    if cfg.wandb.run_name is not None:
+        wandb.run_name = cfg.wandb.run_name
+
+    return run
+
+
+def setup_train_log(cfg: TrainConfig) -> Log:
+    log = Log("train", cfg.exp, cfg.model.arch)
+    log.toggle()
+    logging.debug("arguments:")
+    logging.debug(pprint.pformat(asdict(cfg)))
+    return log
 
 
 def set_random_seed(seed: int) -> None:
@@ -20,6 +53,13 @@ def set_random_seed(seed: int) -> None:
         "You may see unexpected behavior when restarting "
         "from checkpoints."
     )
+
+
+def pil_loader(path: Path) -> Image:
+    # open path as file to avoid ResourceWarning
+    # (https://github.com/python-pillow/Pillow/issues/835)
+    with path.open("rb") as f, Image.open(f) as img:
+        return img.convert("RGB")
 
 
 class AverageMeter:

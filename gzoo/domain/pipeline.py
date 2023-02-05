@@ -11,11 +11,12 @@ from torch.autograd import Variable
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
+from wandb.sdk.wandb_run import Run
 
 import wandb
 from gzoo.domain.model import CustomNet, Model, Random, ResNet
 from gzoo.infra.config import ComputeConfig, DistributedConfig, PredictConfig, TrainConfig
-from gzoo.infra.data import GalaxyTestSet, GalaxyTrainSet, imagenet
+from gzoo.infra.data import GalaxyPredictSet, GalaxyTrainSet
 
 Loss: TypeAlias = Union[nn.CrossEntropyLoss, "RMSELoss"]
 
@@ -121,13 +122,16 @@ def load_model(cfg: TrainConfig, model: Model) -> Model:
 
 
 def make_train_dataset(
-    cfg: TrainConfig,
+    cfg: TrainConfig, run: Run | None
 ) -> tuple[DataLoader, DataLoader, DistributedSampler | None]:
-    if cfg.dataset.name == "imagenet":
-        train_dataset, val_dataset = imagenet(cfg)
-    else:
-        train_dataset = GalaxyTrainSet("train", cfg)
-        val_dataset = GalaxyTrainSet("val", cfg)
+
+    dataset_dir = cfg.dataset.dir
+    if run is not None:
+        dataset_artifact = run.use_artifact(f"{cfg.dataset.clf_name}:{cfg.dataset.version}")
+        dataset_dir = Path(dataset_artifact.download())
+
+    train_dataset = GalaxyTrainSet("train", cfg.dataset, cfg.preprocess, dataset_dir)
+    val_dataset = GalaxyTrainSet("val", cfg.dataset, cfg.preprocess, dataset_dir)
 
     if cfg.distributed.use:
         train_sampler = DistributedSampler(train_dataset)
@@ -155,7 +159,7 @@ def make_train_dataset(
 
 
 def make_test_dataset(cfg: PredictConfig) -> DataLoader:
-    test_dataset = GalaxyTestSet(cfg)
+    test_dataset = GalaxyPredictSet(cfg.dataset)
     test_loader = DataLoader(
         test_dataset,
         batch_size=cfg.compute.batch_size,
