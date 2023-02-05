@@ -60,6 +60,10 @@ class DatasetConfig:
     reg_labels_file: Path = field(default=Path("training_solutions_rev1.csv"))
     predictions_file: Path = field(default=Path("predictions.csv"))
 
+    def __post_init__(self):
+        if self.version is None:
+            self.version = "latest"
+
     @property
     def clf_name(self) -> Path:
         return f"{self.name}-clf"

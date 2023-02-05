@@ -16,11 +16,8 @@ def main(cfg: TrainConfig) -> None:
 
     if cfg.wandb.use:
         run = wandb.init(project=cfg.wandb.project, entity=cfg.wandb.entity, job_type="data_split")
-        version = "latest"
-        if cfg.dataset.version is not None:
-            version = cfg.dataset.version
 
-        dataset = run.use_artifact(f"{cfg.dataset.clf_name}:{version}")
+        dataset = run.use_artifact(f"{cfg.dataset.clf_name}:{cfg.dataset.version}")
         clf_labels_path = Path(dataset.get_path(cfg.dataset.clf_labels_file.name).download())
     else:
         clf_labels_path = cfg.dataset.clf_labels
