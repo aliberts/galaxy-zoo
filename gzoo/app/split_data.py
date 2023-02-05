@@ -4,7 +4,7 @@ import pandas as pd
 import pyrallis
 from sklearn.model_selection import train_test_split
 from termgraph.module import Args, BarChart, Data
-from wandb.apis.public import Artifact
+from wandb.sdk.interface.artifacts import Artifact
 from wandb.sdk.wandb_run import Run
 
 import wandb
