@@ -16,7 +16,10 @@ dataset:
   - spiral
   clf_images_dir: clf_images
   clf_labels_file: clf_labels.csv
+  clf_labels_split_file: clf_labels_split.csv
   dir: dataset
+  eda_table: eda_table
+  eda_table_split: eda_table_split
   name: galaxy-zoo
   predictions_file: predictions.csv
   reg_images_test_dir: images_test_rev1
@@ -24,6 +27,7 @@ dataset:
   reg_labels_file: training_solutions_rev1.csv
   test_split_ratio: 0.1
   val_split_ratio: 0.1
+  version: latest
 debug: false
 distributed:
   dist_backend: nccl
