@@ -1,33 +1,23 @@
-import glob
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
-from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
-from torchvision.datasets import ImageFolder
 from torchvision.transforms.transforms import Compose
 
-from gzoo.infra.config import PredictConfig, PreprocessConfig, TrainConfig
+from gzoo.infra.config import DatasetConfig, PreprocessConfig
+from gzoo.infra.utils import pil_loader
 
 # from torchvision.utils import save_image
 
 
-def pil_loader(path: Path) -> Image:
-    # open path as file to avoid ResourceWarning
-    # (https://github.com/python-pillow/Pillow/issues/835)
-    with path.open("rb") as f, Image.open(f) as img:
-        return img.convert("RGB")
-
-
 class GalaxyTrainSet(Dataset):
-    """Train/Val dataset.
+    """Train/Val/Test dataset.
 
     Args:
-        split (str): "train", "val"
+        split (str): "train", "val", "test"
         cfg (namespace): options from config
 
     Returns (__getitem__):
@@ -35,61 +25,40 @@ class GalaxyTrainSet(Dataset):
         label (torch.Tensor)
     """
 
-    def __init__(self, split: str, cfg: TrainConfig):
+    def __init__(
+        self, split: str, data_cfg: DatasetConfig, prepro_cfg: PreprocessConfig, dir: Path
+    ):
         super().__init__()
         self.split = split
-        self.val_split_ratio = cfg.dataset.val_split_ratio
-        self.task = cfg.exp.task
-        self.seed = cfg.compute.seed if cfg.compute.seed is not None else 0
-        if not cfg.dataset.dir.exists():
+        if not data_cfg.dir.exists():
             raise FileNotFoundError(
                 "Dataset not found. Please run `make dataset` or download it from: "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
-        self.image_dir = cfg.dataset.train_images
-        self.label_file = cfg.dataset.train_labels
-        if cfg.exp.evaluate:
-            self.label_file = cfg.dataset.test_labels
+        labels_split_path = dir / data_cfg.clf_labels_split_file
+        self.image_dir = dir / data_cfg.clf_images_dir.name
 
         try:
-            df = pd.read_csv(self.label_file, header=0, sep=",")
+            labels_df = pd.read_csv(labels_split_path, header=0, sep=",", index_col="GalaxyID")
         except FileNotFoundError:
             raise FileNotFoundError(
                 "Classification labels not found. "
-                "Run `poetry run python -m gzoo.app.make_labels` first."
+                "Run `poetry run python -m gzoo.app.make_labels` "
+                "and then `poetry run python -m gzoo.app.split_data` first."
             )
-        self.indexes, self.labels = self._split_dataset(df, cfg.exp.evaluate)
-        self.image_tf = self._build_transforms(cfg.preprocess)
+        self.class_names = data_cfg.class_names
+        self.indexes, self.labels = self._get_split(labels_df)
+        self.image_tf = self._build_transforms(prepro_cfg)
 
-    def _split_dataset(self, df: pd.DataFrame, evaluate: bool) -> tuple[pd.DataFrame, pd.DataFrame]:
-        indexes = df.iloc[:, 0]
-        labels = df.iloc[:, 1:]
+    def _get_split(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+        df = df[df["Split"] == self.split]
+        df = df.assign(**{"Label": df.loc[:, "Class"].apply(self._get_class_number)})
+        indexes = df.index.to_list()
+        labels = df["Label"].to_list()
+        return indexes, labels
 
-        if self.task == "classification" and not evaluate:
-            idx_train, idx_val, lbl_train, lbl_val = train_test_split(
-                indexes,
-                labels,
-                test_size=self.val_split_ratio,
-                random_state=self.seed,
-                stratify=labels,
-            )
-            if self.split == "train":
-                indexes = idx_train
-                labels = lbl_train
-            elif self.split == "val":
-                indexes = idx_val
-                labels = lbl_val
-
-        elif self.task == "regression" and not evaluate:
-            indices = np.random.RandomState(seed=self.seed).permutation(indexes.shape[0])
-            val_len = int(len(indexes) * self.val_split_ratio)
-            val_idx, train_idx = indices[:val_len], indices[val_len:]
-            if self.split == "train":
-                indexes = indexes[train_idx]
-            elif self.split == "val":
-                indexes = indexes[val_idx]
-
-        return indexes.reset_index(drop=True), labels.reset_index(drop=True)
+    def _get_class_number(self, class_name: str) -> int:
+        return self.class_names.index(class_name)
 
     def _build_transforms(self, cfg: PreprocessConfig) -> Compose:
         image_tf = []
@@ -123,7 +92,7 @@ class GalaxyTrainSet(Dataset):
         return transforms.Compose(image_tf)
 
     def __getitem__(self, idx: int) -> tuple[Image.Image, torch.tensor]:
-        image_id = self.indexes.iloc[idx]
+        image_id = self.indexes[idx]
         path = self.image_dir / f"{image_id}.jpg"
         image = pil_loader(path)
         # -- DEBUG --
@@ -132,44 +101,42 @@ class GalaxyTrainSet(Dataset):
         image = self.image_tf(image)
         # save_image(image, f'logs/{idx}_tf.png')
         # breakpoint()
-        label = self.labels.iloc[idx]
-        if self.task == "classification":
-            label = torch.tensor(label).long()
-        elif self.task == "regression":
-            label = torch.tensor(label).float()
+        label = self.labels[idx]
+        label = torch.tensor(label).long()
         return image, label
 
     def __len__(self) -> int:
         return len(self.indexes)
 
 
-class GalaxyTestSet(Dataset):
-    """Test dataset.
+class GalaxyPredictSet(Dataset):
+    """Inference dataset.
 
     Args:
-        split (str): "train", "val"
         cfg (namespace): options from config
+        run: wandb run
 
     Returns (__getitem__):
         image (torch.Tensor)
         image_id (int)
     """
 
-    def __init__(self, cfg: PredictConfig):
+    def __init__(self, data_cfg: DatasetConfig):
         super().__init__()
-        if not cfg.dataset.dir.exists():
+        if not data_cfg.dir.exists():
             raise FileNotFoundError(
-                "Please download them from "
+                "Dataset not found. Please run `make dataset` or download it from: "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
+        self.image_dir = data_cfg.clf_images
 
-        self.image_dir = cfg.dataset.test_images
-        image_list = []
-        for filename in glob.glob(f"{self.image_dir}/*.jpg"):
-            idx = filename.split("/")[-1][:-4]
-            image_list.append(idx)
-        self.indexes = pd.Series(image_list)
+        self.indexes = []
+        for filename in self.image_dir.glob("*.jpg"):
+            self.indexes.append(filename.stem)
 
+        self.image_tf = self._build_transforms()
+
+    def _build_transforms(self) -> Compose:
         image_tf = []
         image_tf.extend(
             [
@@ -177,10 +144,10 @@ class GalaxyTestSet(Dataset):
                 transforms.ToTensor(),
             ]
         )
-        self.image_tf = transforms.Compose(image_tf)
+        return transforms.Compose(image_tf)
 
     def __getitem__(self, idx: int) -> tuple[Image.Image, int]:
-        image_id = self.indexes.iloc[idx]
+        image_id = self.indexes[idx]
         path = self.image_dir / f"{image_id}.jpg"
         image = pil_loader(path)
         image = self.image_tf(image)
@@ -188,35 +155,3 @@ class GalaxyTestSet(Dataset):
 
     def __len__(self) -> int:
         return len(self.indexes)
-
-
-def imagenet(cfg: TrainConfig) -> tuple[ImageFolder, ImageFolder]:
-    traindir = cfg.dataset.dir / "train"
-    valdir = cfg.dataset.dir / "val"
-    # https://stackoverflow.com/questions/58151507
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-
-    train_set = ImageFolder(
-        traindir,
-        transforms.Compose(
-            [
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                normalize,
-            ]
-        ),
-    )
-    test_set = ImageFolder(
-        valdir,
-        transforms.Compose(
-            [
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                normalize,
-            ]
-        ),
-    )
-
-    return train_set, test_set
