@@ -15,8 +15,6 @@ import torch
 import torch.backends.cudnn as cudnn
 from pyrallis import field
 
-# from gzoo.infra import utils
-
 
 @dataclass
 class ExpConfig:
@@ -53,7 +51,6 @@ class DatasetConfig:
             "spiral",
         ]
     )
-    # raw_table: str = "raw_table"
     raw_table: str = "raw_table"
     split_table: str = "split_table"
 
@@ -233,7 +230,6 @@ class SplitConfig:
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     seed: Optional[int] = None
     from_raw: bool = False
-    make_table: bool = True
     debug: bool = False
 
 

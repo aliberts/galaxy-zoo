@@ -18,26 +18,25 @@ def main(cfg: config.SplitConfig) -> None:
     else:
         dataset_path = cfg.dataset.clf
 
-    clf_images_path = dataset_path / cfg.dataset.clf_images_raw_dir
-    clf_labels_path = dataset_path / cfg.dataset.clf_labels_file
-
-    # Test / train / val split
-    clf_labels_df = pd.read_csv(clf_labels_path, header=0, sep=",", index_col="GalaxyID")
-    if cfg.from_raw:
+    if cfg.from_raw:  # Test / train / val split
+        clf_labels_path = dataset_path / cfg.dataset.clf_labels_file
+        clf_labels_df = pd.read_csv(clf_labels_path, header=0, sep=",", index_col="GalaxyID")
         clf_test_df, clf_train_val_df = split_test_train_val(
             clf_labels_df, cfg.dataset.test_split_ratio, cfg.dataset.val_split_ratio, cfg.seed
         )
-    else:  # reshuffle train / val
+    else:  # Reshuffle train / val
+        clf_labels_path = dataset_path / cfg.dataset.clf_labels_train_val_file
+        clf_labels_df = pd.read_csv(clf_labels_path, header=0, sep=",", index_col="GalaxyID")
+        clf_train_val_df = shuffle_train_val(clf_labels_df, cfg.dataset.val_split_ratio, cfg.seed)
         clf_labels_test_path = dataset_path / cfg.dataset.clf_labels_test_file
         clf_test_df = pd.read_csv(clf_labels_test_path, header=0, sep=",", index_col="GalaxyID")
-        clf_train_val_df = shuffle_train_val(clf_labels_df, cfg.dataset.val_split_ratio, cfg.seed)
 
     clf_whole_df = pd.concat([clf_test_df, clf_train_val_df]).sort_index()
     utils.print_split_summary(clf_whole_df)
-    write_data_split(clf_test_df, clf_train_val_df, clf_images_path, cfg.dataset, cfg.from_raw)
+    write_data_split(clf_test_df, clf_train_val_df, dataset_path, cfg.dataset, cfg.from_raw)
 
     if cfg.wandb.use:
-        write_artifacts(clf_whole_df, parent_artifact, cfg.dataset, cfg.from_raw)
+        write_artifacts(clf_whole_df, parent_artifact, cfg.dataset, cfg.from_raw, run)
 
 
 def split_test_train_val(
@@ -69,7 +68,9 @@ def split_test_train_val(
     return test_df, train_val_df
 
 
-def shuffle_train_val(labels: pd.DataFrame, val_split_ratio: float) -> pd.DataFrame:
+def shuffle_train_val(
+    labels: pd.DataFrame, val_split_ratio: float, seed: int | None
+) -> pd.DataFrame:
     """
     Returns a DataFrame similar to labels with an additional "Split" column which contains
     the partition name (train & val / test) for each row. The split is done according to
@@ -78,7 +79,7 @@ def shuffle_train_val(labels: pd.DataFrame, val_split_ratio: float) -> pd.DataFr
     train_df, val_df = train_test_split(
         labels,
         test_size=val_split_ratio,
-        random_state=0,
+        random_state=seed,
         stratify=labels["Class"],
     )
 
@@ -91,7 +92,7 @@ def shuffle_train_val(labels: pd.DataFrame, val_split_ratio: float) -> pd.DataFr
 def write_data_split(
     test_df: pd.DataFrame,
     train_val_df: pd.DataFrame,
-    image_dir: Path,
+    dataset_dir: Path,
     cfg: config.DatasetConfig,
     from_raw: bool,
 ) -> None:
@@ -102,7 +103,8 @@ def write_data_split(
         utils.purge_images(cfg.clf_images_train_val)
 
         # Copy test and train_val images to respective directories
-        dataset_raw = data.GalaxyRawSet(image_dir)
+        clf_images_path = dataset_dir / cfg.dataset.clf_images_raw_dir
+        dataset_raw = data.GalaxyRawSet(clf_images_path)
         dataset_raw.copy_to(cfg.clf_images_test, test_df.index.to_list())
         dataset_raw.copy_to(cfg.clf_images_train_val, train_val_df.index.to_list())
 
@@ -114,11 +116,10 @@ def write_data_split(
 
 
 def write_artifacts(
-    clf_whole_df: pd.DataFrame,
+    labels_df: pd.DataFrame,
     parent_artifact: wandb.Artifact,
     cfg: config.DatasetConfig,
     from_raw: bool,
-    make_table: bool,
     run: wandb.run,
 ) -> None:
     train_val_items = [cfg.clf_labels_train_val, cfg.clf_labels_test, cfg.clf_images_train_val]
@@ -128,17 +129,14 @@ def write_artifacts(
         test_items = [cfg.clf_labels_test, cfg.clf_images_test]
         test_artifact = utils.make_dataset_artifact("clf_test", test_items)
 
-    if make_table:
-        parent_table = cfg.raw_table if from_raw else cfg.split_table
-        left_table = parent_artifact.get(parent_table)
-        clf_whole_df["Dataset"] = "clf_train_val"
-        clf_whole_df.loc[clf_whole_df["Split"] == "test", "Dataset"] = "clf_test"
+        left_table = parent_artifact.get(cfg.raw_table)
+        labels_df["Dataset"] = "clf_train_val"
+        labels_df.loc[labels_df["Split"] == "test", "Dataset"] = "clf_test"
 
-        right_table = wandb.Table(dataframe=clf_whole_df.reset_index())
+        right_table = wandb.Table(dataframe=labels_df.reset_index())
         split_table = wandb.JoinedTable(left_table, right_table, "GalaxyID")
         train_val_artifact.add(split_table, name=cfg.split_table)
 
-    if from_raw:
         run.log_artifact(test_artifact)
 
     run.log_artifact(train_val_artifact)
