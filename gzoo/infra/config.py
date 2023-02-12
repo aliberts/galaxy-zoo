@@ -4,15 +4,18 @@ by running 'poetry run python -m gzoo.app.update_config'
 """
 
 import os
+import random
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import numpy
 import torch
+import torch.backends.cudnn as cudnn
 from pyrallis import field
 
-from gzoo.infra import utils
+# from gzoo.infra import utils
 
 
 @dataclass
@@ -30,7 +33,7 @@ class WandBConfig:
     entity: str = "aliberts"
     project: str = "galaxy-zoo"
     run_name: Optional[str] = None
-    tags: Optional[list] = field(default_factory=lambda: ["baseline", "model exploration"])
+    tags: Optional[list] = None  # field(default_factory=lambda: ["baseline", "model exploration"])
     note: Optional[str] = None
 
 
@@ -50,14 +53,24 @@ class DatasetConfig:
             "spiral",
         ]
     )
-    eda_table: str = "eda_table"
-    eda_table_split: str = "eda_table_split"
-    clf_labels_split_file: Path = field(default=Path("clf_labels_split.csv"))
-    clf_images_dir: Path = field(default=Path("clf_images"))
+    # raw_table: str = "raw_table"
+    raw_table: str = "raw_table"
+    split_table: str = "split_table"
+
+    clf_dir: Path = field(default=Path("classification"))
+    clf_labels_test_file: Path = field(default=Path("clf_labels_test.csv"))
+    clf_labels_train_val_file: Path = field(default=Path("clf_labels_train_val.csv"))
     clf_labels_file: Path = field(default=Path("clf_labels.csv"))
-    reg_images_train_dir: Path = field(default=Path("images_training_rev1"))
+    clf_images_raw_dir: Path = field(default=Path("images_raw"))
+    clf_images_train_val_dir: Path = field(default=Path("images_train_val"))
+    clf_images_test_dir: Path = field(default=Path("images_test"))
+
+    reg_dir: Path = field(default=Path("regression"))
     reg_images_test_dir: Path = field(default=Path("images_test_rev1"))
+    reg_images_train_dir: Path = field(default=Path("images_training_rev1"))
     reg_labels_file: Path = field(default=Path("training_solutions_rev1.csv"))
+
+    pred_dir: Path = field(default=Path("prediction"))
     predictions_file: Path = field(default=Path("predictions.csv"))
 
     def __post_init__(self):
@@ -65,36 +78,52 @@ class DatasetConfig:
             self.version = "latest"
 
     @property
-    def clf_name(self) -> Path:
-        return f"{self.name}-clf"
+    def clf(self) -> Path:
+        return self.dir / self.clf_dir
 
     @property
-    def reg_name(self) -> Path:
-        return f"{self.name}-reg"
+    def clf_images_raw(self) -> Path:
+        return self.clf / self.clf_images_raw_dir
 
     @property
-    def clf_labels_split(self) -> Path:
-        return self.dir / self.clf_labels_split_file
+    def clf_images_test(self) -> Path:
+        return self.clf / self.clf_images_test_dir
 
     @property
-    def clf_images(self) -> Path:
-        return self.dir / self.clf_images_dir
+    def clf_images_train_val(self) -> Path:
+        return self.clf / self.clf_images_train_val_dir
 
     @property
     def clf_labels(self) -> Path:
-        return self.dir / self.clf_labels_file
+        return self.clf / self.clf_labels_file
+
+    @property
+    def clf_labels_test(self) -> Path:
+        return self.clf / self.clf_labels_test_file
+
+    @property
+    def clf_labels_train_val(self) -> Path:
+        return self.clf / self.clf_labels_train_val_file
+
+    @property
+    def reg(self) -> Path:
+        return self.dir / self.reg_dir
 
     @property
     def reg_images_train(self) -> Path:
-        return self.dir / self.reg_images_train_dir
+        return self.reg / self.reg_images_train_dir
+
+    @property
+    def reg_images_test(self) -> Path:
+        return self.reg / self.reg_images_test_dir
 
     @property
     def reg_labels(self) -> Path:
-        return self.dir / self.reg_labels_file
+        return self.reg / self.reg_labels_file
 
     @property
     def predictions(self) -> Path:
-        return self.dir / "predictions" / self.predictions_file
+        return self.dir / self.pred_dir / self.predictions_file
 
 
 @dataclass
@@ -120,10 +149,25 @@ class ComputeConfig:
     def __post_init__(self):
         if self.seed is not None:
             self.seed = int(self.seed)
-            utils.set_random_seed(self.seed)
+            self.set_random_seed(self.seed)
 
         if not self.use_cuda:
             torch.cuda.is_available = lambda: False
+
+    def set_random_seed(self, seed: int) -> None:
+        # is pytorch dataloader with multi-threads deterministic ?
+        # cudnn may not be deterministic anyway
+        torch.manual_seed(seed)  # on CPU and GPU
+        numpy.random.seed(seed)  # useful ? not thread safe
+        random.seed(seed)  # useful ? thread safe
+        cudnn.deterministic = True
+        warnings.warn(
+            "You have chosen to seed training. "
+            "This will turn on the CUDNN deterministic setting, "
+            "which can slow down your training considerably! "
+            "You may see unexpected behavior when restarting "
+            "from checkpoints."
+        )
 
 
 @dataclass
@@ -180,6 +224,16 @@ class EnsemblingConfig:
 class UploadConfig:
     wandb: WandBConfig = field(default_factory=WandBConfig)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
+    debug: bool = False
+
+
+@dataclass
+class SplitConfig:
+    wandb: WandBConfig = field(default_factory=WandBConfig)
+    dataset: DatasetConfig = field(default_factory=DatasetConfig)
+    seed: Optional[int] = None
+    from_raw: bool = False
+    make_table: bool = True
     debug: bool = False
 
 

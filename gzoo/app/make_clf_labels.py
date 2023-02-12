@@ -2,20 +2,15 @@
 Make Classification Labels
 Run this script to generate the labels used for the classification version of the problem.
 """
-
-import shutil
-from pathlib import Path
-
 import pandas as pd
 import pyrallis
-from tqdm import tqdm
 
-from gzoo.infra.config import TrainConfig
+from gzoo.infra import config, data
 
 
-@pyrallis.wrap(config_path="config/train.yaml")
-def main(cfg: TrainConfig) -> None:
-    reg_labels = pd.read_csv(cfg.dataset.reg_labels, sep=",", index_col="GalaxyID")
+@pyrallis.wrap()
+def main(cfg: config.DatasetConfig) -> None:
+    reg_labels = pd.read_csv(cfg.reg_labels, sep=",", index_col="GalaxyID")
     clf_labels = pd.DataFrame()
     clf_labels = clf_labels.assign(
         # fmt: off
@@ -42,21 +37,13 @@ def main(cfg: TrainConfig) -> None:
     clf_labels = clf_labels.idxmax(axis=1)
     clf_labels.name = "Class"
 
+    # Copy them to a "classification" folder
     image_list = clf_labels.index.to_list()
-    copy_images(image_list, cfg.dataset.reg_images_train, cfg.dataset.clf_images)
+    reg_dataset = data.GalaxyRawSet(cfg.reg_images_train)
+    reg_dataset.copy_to(cfg.clf_images_raw, image_list)
 
-    clf_labels.to_csv(cfg.dataset.clf_labels, sep=",")
-    print(f"Classification labels writen to {cfg.dataset.clf_labels}.")
-
-
-def copy_images(image_names: list[int], from_: Path, to_: Path) -> None:
-    to_.mkdir(exist_ok=True)
-    print(f"Copying classification-labeled images from {from_} to {to_}")
-    for image in tqdm(image_names):
-        image_file = Path(str(image)).with_suffix(".jpg")
-        file_in = from_ / image_file
-        file_out = to_ / image_file
-        shutil.copy(file_in, file_out)
+    clf_labels.to_csv(cfg.clf_labels, sep=",")
+    print(f"Classification labels writen to {cfg.clf_labels}.")
 
 
 if __name__ == "__main__":
