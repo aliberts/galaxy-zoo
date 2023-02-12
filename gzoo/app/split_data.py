@@ -3,115 +3,145 @@ from pathlib import Path
 import pandas as pd
 import pyrallis
 from sklearn.model_selection import train_test_split
-from termgraph.module import Args, BarChart, Data
-from wandb.sdk.interface.artifacts import Artifact
-from wandb.sdk.wandb_run import Run
 
 import wandb
-from gzoo.infra.config import DatasetConfig, TrainConfig
+from gzoo.infra import config, data, utils
 
 
 @pyrallis.wrap()
-def main(cfg: TrainConfig) -> None:
-
+def main(cfg: config.SplitConfig) -> None:
     if cfg.wandb.use:
-        run = wandb.init(project=cfg.wandb.project, entity=cfg.wandb.entity, job_type="data_split")
-
-        dataset = run.use_artifact(f"{cfg.dataset.clf_name}:{cfg.dataset.version}")
-        clf_labels_path = Path(dataset.get_path(cfg.dataset.clf_labels_file.name).download())
+        run = utils.setup_wandb_split_run(cfg)
+        parent_name = "clf_raw" if cfg.from_raw else "clf_train_val"
+        parent_artifact = run.use_artifact(f"{parent_name}:{cfg.dataset.version}")
+        dataset_path = Path(parent_artifact.download())
     else:
-        clf_labels_path = cfg.dataset.clf_labels
+        dataset_path = cfg.dataset.clf
 
+    clf_images_path = dataset_path / cfg.dataset.clf_images_raw_dir
+    clf_labels_path = dataset_path / cfg.dataset.clf_labels_file
+
+    # Test / train / val split
     clf_labels_df = pd.read_csv(clf_labels_path, header=0, sep=",", index_col="GalaxyID")
-    clf_labels_split_df = split_data(
-        clf_labels_df, cfg.dataset.test_split_ratio, cfg.dataset.val_split_ratio
-    )
-    print_split_summary(clf_labels_split_df)
-    clf_labels_split_df.to_csv(cfg.dataset.clf_labels_split)
-    print(f"Data split written to {cfg.dataset.clf_labels_split}")
+    if cfg.from_raw:
+        clf_test_df, clf_train_val_df = split_test_train_val(
+            clf_labels_df, cfg.dataset.test_split_ratio, cfg.dataset.val_split_ratio, cfg.seed
+        )
+    else:  # reshuffle train / val
+        clf_labels_test_path = dataset_path / cfg.dataset.clf_labels_test_file
+        clf_test_df = pd.read_csv(clf_labels_test_path, header=0, sep=",", index_col="GalaxyID")
+        clf_train_val_df = shuffle_train_val(clf_labels_df, cfg.dataset.val_split_ratio, cfg.seed)
+
+    clf_whole_df = pd.concat([clf_test_df, clf_train_val_df]).sort_index()
+    utils.print_split_summary(clf_whole_df)
+    write_data_split(clf_test_df, clf_train_val_df, clf_images_path, cfg.dataset, cfg.from_raw)
 
     if cfg.wandb.use:
-        upload_data_split(cfg.dataset, run, dataset, clf_labels_split_df)
+        write_artifacts(clf_whole_df, parent_artifact, cfg.dataset, cfg.from_raw)
 
 
-def split_data(
-    labels: pd.DataFrame, test_split_ratio: float, val_split_ratio: float
-) -> pd.DataFrame:
+def split_test_train_val(
+    labels: pd.DataFrame, test_split_ratio: float, val_split_ratio: float, seed: int | None
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Returns a DataFrame similar to labels with an additional "Split" column which contains
-    the partition name (train / val / test) for each row. The split is done according to
-    the ratios given as input.
+    Returns 2 DataFrame (test and train_val) similar to labels with an additional "Split"
+    column which contains the partition name (train / val / test) for each row.
+    The split is done according to the ratios given as input.
     """
     train_val_df, test_df = train_test_split(
         labels,
         test_size=test_split_ratio,
-        random_state=0,
+        random_state=seed,
         stratify=labels["Class"],
     )
 
     train_df, val_df = train_test_split(
         train_val_df,
         test_size=val_split_ratio,
-        random_state=0,
+        random_state=seed,
         stratify=train_val_df["Class"],
     )
 
     train_df["Split"] = "train"
     val_df["Split"] = "val"
     test_df["Split"] = "test"
-    df = pd.concat([train_df, val_df, test_df]).sort_index()
+    train_val_df = pd.concat([train_df, val_df]).sort_index()
+    return test_df, train_val_df
+
+
+def shuffle_train_val(labels: pd.DataFrame, val_split_ratio: float) -> pd.DataFrame:
+    """
+    Returns a DataFrame similar to labels with an additional "Split" column which contains
+    the partition name (train & val / test) for each row. The split is done according to
+    the ratios given as input.
+    """
+    train_df, val_df = train_test_split(
+        labels,
+        test_size=val_split_ratio,
+        random_state=0,
+        stratify=labels["Class"],
+    )
+
+    train_df["Split"] = "train"
+    val_df["Split"] = "val"
+    df = pd.concat([train_df, val_df]).sort_index()
     return df
 
 
-def print_split_summary(labels_split: pd.DataFrame) -> None:
-    """
-    Displays a quick summary of the data split and the class distributions.
-    """
-    split_nb = labels_split.groupby(["Split", "Class"]).size()
-    split_ratio = 100 * split_nb / split_nb.groupby("Split").transform("sum")
-    split_ratio = split_ratio.apply(lambda x: round(x, 1))
-    summary = pd.concat([split_nb, split_ratio], axis=1)
-    summary.columns = ["examples", "% per split"]
-    for split in ["train", "val", "test"]:
-        total = labels_split.groupby(["Split"]).size().loc[split]
-        print(f"----- {split} labels ({total}) -----")
-        print(summary.loc[split], "\n")
-
-    print_split_distribution(split_ratio)
-
-
-def print_split_distribution(split_ratio: pd.DataFrame) -> None:
-    """
-    Displays class distributions on a horizontal bar graph.
-    """
-    chart_values = [[x] for x in split_ratio["test"].to_list()]
-    chart_labels = split_ratio["test"].index.to_list()
-    bar_data = Data(chart_values, chart_labels)
-    args = Args(width=20)
-    print("----- labels distribution for each split (%) -----")
-    BarChart(bar_data, args).draw()
-
-
-def upload_data_split(
-    cfg: DatasetConfig, run: Run, dataset: Artifact, data_split: pd.DataFrame
+def write_data_split(
+    test_df: pd.DataFrame,
+    train_val_df: pd.DataFrame,
+    image_dir: Path,
+    cfg: config.DatasetConfig,
+    from_raw: bool,
 ) -> None:
-    """
-    Uploads the data split to Weights & Biases under a new version of the dataset artifact.
-    """
-    eda_table = dataset.get(cfg.eda_table)
-    dataset_path = Path(dataset.download())
 
-    data_split = data_split.reset_index()
-    data_split = data_split.rename(columns={"GalaxyID": "ID"})
-    data_split_table = wandb.Table(dataframe=data_split[["ID", "Split"]])
-    join_table = wandb.JoinedTable(eda_table, data_split_table, "ID")
+    if from_raw:
+        # Purge previous split image directories
+        utils.purge_images(cfg.clf_images_test)
+        utils.purge_images(cfg.clf_images_train_val)
 
-    split_dataset = wandb.Artifact(cfg.clf_name, type="dataset")
-    split_dataset.add_file(cfg.clf_labels_split)
-    split_dataset.add_dir(dataset_path)
-    split_dataset.add(join_table, cfg.eda_table_split)
+        # Copy test and train_val images to respective directories
+        dataset_raw = data.GalaxyRawSet(image_dir)
+        dataset_raw.copy_to(cfg.clf_images_test, test_df.index.to_list())
+        dataset_raw.copy_to(cfg.clf_images_train_val, train_val_df.index.to_list())
 
-    run.log_artifact(split_dataset)
+    # Write label files
+    test_df.to_csv(cfg.clf_labels_test)
+    train_val_df.to_csv(cfg.clf_labels_train_val)
+    print(f"Test labels written to {cfg.clf_labels_test}")
+    print(f"Train/val labels written to {cfg.clf_labels_train_val}")
+
+
+def write_artifacts(
+    clf_whole_df: pd.DataFrame,
+    parent_artifact: wandb.Artifact,
+    cfg: config.DatasetConfig,
+    from_raw: bool,
+    make_table: bool,
+    run: wandb.run,
+) -> None:
+    train_val_items = [cfg.clf_labels_train_val, cfg.clf_labels_test, cfg.clf_images_train_val]
+    train_val_artifact = utils.make_dataset_artifact("clf_train_val", train_val_items)
+
+    if from_raw:
+        test_items = [cfg.clf_labels_test, cfg.clf_images_test]
+        test_artifact = utils.make_dataset_artifact("clf_test", test_items)
+
+    if make_table:
+        parent_table = cfg.raw_table if from_raw else cfg.split_table
+        left_table = parent_artifact.get(parent_table)
+        clf_whole_df["Dataset"] = "clf_train_val"
+        clf_whole_df.loc[clf_whole_df["Split"] == "test", "Dataset"] = "clf_test"
+
+        right_table = wandb.Table(dataframe=clf_whole_df.reset_index())
+        split_table = wandb.JoinedTable(left_table, right_table, "GalaxyID")
+        train_val_artifact.add(split_table, name=cfg.split_table)
+
+    if from_raw:
+        run.log_artifact(test_artifact)
+
+    run.log_artifact(train_val_artifact)
     run.finish()
 
 

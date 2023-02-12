@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -6,9 +7,10 @@ import torchvision.transforms as transforms
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms.transforms import Compose
+from tqdm import tqdm
 
+from gzoo.infra import utils
 from gzoo.infra.config import DatasetConfig, PreprocessConfig
-from gzoo.infra.utils import pil_loader
 
 # from torchvision.utils import save_image
 
@@ -94,7 +96,7 @@ class GalaxyTrainSet(Dataset):
     def __getitem__(self, idx: int) -> tuple[Image.Image, torch.tensor]:
         image_id = self.indexes[idx]
         path = self.image_dir / f"{image_id}.jpg"
-        image = pil_loader(path)
+        image = utils.pil_loader(path)
         # -- DEBUG --
         # tens = transforms.ToTensor()
         # save_image(tens(image), f'logs/{idx}_raw.png')
@@ -109,7 +111,7 @@ class GalaxyTrainSet(Dataset):
         return len(self.indexes)
 
 
-class GalaxyPredictSet(Dataset):
+class GalaxyRawSet(Dataset):
     """Inference dataset.
 
     Args:
@@ -121,18 +123,19 @@ class GalaxyPredictSet(Dataset):
         image_id (int)
     """
 
-    def __init__(self, data_cfg: DatasetConfig):
+    def __init__(self, dir: Path, types: list[str] | None = None):
         super().__init__()
-        if not data_cfg.dir.exists():
+        if not dir.exists():
             raise FileNotFoundError(
                 "Dataset not found. Please run `make dataset` or download it from: "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
-        self.image_dir = data_cfg.clf_images
+        if types is None:
+            types = [".jpg"]
 
-        self.indexes = []
-        for filename in self.image_dir.glob("*.jpg"):
-            self.indexes.append(filename.stem)
+        self.dir = dir
+        self.index_list = [f for type in types for f in dir.glob(f"*{type}")]
+        self.index_dict = {fname.stem: fname for fname in self.index_list}
 
         self.image_tf = self._build_transforms()
 
@@ -146,11 +149,26 @@ class GalaxyPredictSet(Dataset):
         )
         return transforms.Compose(image_tf)
 
-    def __getitem__(self, idx: int) -> tuple[Image.Image, int]:
-        image_id = self.indexes[idx]
-        path = self.image_dir / f"{image_id}.jpg"
-        image = pil_loader(path)
-        image = self.image_tf(image)
+    def get_pil(self, image_name: str | int):
+        path = self.index_dict[str(image_name)]
+        return Image.open(path)
+
+    def copy_to(self, folder: Path, image_list: list[str | int] | None = None):
+        folder.mkdir(parents=True, exist_ok=True)
+        if image_list is not None:
+            file_list = [self.index_dict[str(x)] for x in image_list if str(x) in self.index_dict]
+        else:
+            file_list = self.index_list
+
+        print(f"Copying {len(file_list)} images from {self.dir} to {folder}")
+        for file_in in tqdm(file_list):
+            file_out = folder / file_in.name
+            shutil.copy(file_in, file_out)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
+        image_path = self.indexes[idx]
+        image_id = image_path.stem
+        image = utils.pil_loader(image_path)
         return image, image_id
 
     def __len__(self) -> int:

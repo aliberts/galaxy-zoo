@@ -14,17 +14,23 @@ dataset:
   - cigar_shaped_smooth
   - edge_on
   - spiral
-  clf_images_dir: clf_images
+  clf_dir: classification
+  clf_images_raw_dir: images_raw
+  clf_images_test_dir: images_test
+  clf_images_train_val_dir: images_train_val
   clf_labels_file: clf_labels.csv
-  clf_labels_split_file: clf_labels_split.csv
+  clf_labels_test_file: clf_labels_test.csv
+  clf_labels_train_val_file: clf_labels_train_val.csv
   dir: dataset
-  eda_table: eda_table
-  eda_table_split: eda_table_split
   name: galaxy-zoo
+  pred_dir: prediction
   predictions_file: predictions.csv
+  raw_table: raw_table
+  reg_dir: regression
   reg_images_test_dir: images_test_rev1
   reg_images_train_dir: images_training_rev1
   reg_labels_file: training_solutions_rev1.csv
+  split_table: split_table
   test_split_ratio: 0.1
   val_split_ratio: 0.1
   version: latest
