@@ -17,12 +17,9 @@ import torch.utils.data.distributed
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from wandb.sdk.wandb_run import Run
 
 import wandb
-from gzoo.domain import pipeline
-from gzoo.domain.model import Model
-from gzoo.domain.pipeline import Loss
+from gzoo.domain import models, pipeline
 from gzoo.infra import config, utils
 
 NB_CLASSES = 5
@@ -36,7 +33,6 @@ val_batch_ct = 0
 
 @pyrallis.wrap(config_path="config/train.yaml")
 def main(cfg: config.TrainConfig) -> None:
-
     run = None
     if cfg.wandb.use:
         run = utils.setup_wandb_training_run(cfg)
@@ -59,8 +55,9 @@ def main(cfg: config.TrainConfig) -> None:
         main_worker(cfg.distributed.gpu, cfg, log.dir, run)
 
 
-def main_worker(gpu: int | None, cfg: config.TrainConfig, log_dir: Path, run: Run | None) -> None:
-
+def main_worker(
+    gpu: int | None, cfg: config.TrainConfig, log_dir: Path, run: wandb.run | None
+) -> None:
     cfg.distributed.gpu = gpu
     cfg.distributed = pipeline.setup_distributed(gpu, cfg.distributed)
 
@@ -104,13 +101,13 @@ def train_loop(
     train_loader: DataLoader,
     val_loader: DataLoader,
     train_sampler: DistributedSampler | None,
-    model: Model,
-    criterion: Loss,
+    model: models.Model,
+    criterion: pipeline.Loss,
     optimizer: Optimizer,
     epoch: int,
     cfg: config.TrainConfig,
     log_dir: Path,
-    run: Run | None,
+    run: wandb.run | None,
 ) -> None:
     global best_score
     if cfg.distributed.use:
@@ -179,8 +176,8 @@ def train_loop(
 
 def train(
     train_loader: DataLoader,
-    model: Model,
-    criterion: Loss,
+    model: models.Model,
+    criterion: pipeline.Loss,
     optimizer: Optimizer,
     epoch: int,
     cfg: config.TrainConfig,
@@ -256,7 +253,7 @@ def train(
 
 
 def validate(
-    val_loader: DataLoader, model: Model, criterion: Loss, cfg: config.TrainConfig
+    val_loader: DataLoader, model: models.Model, criterion: pipeline.Loss, cfg: config.TrainConfig
 ) -> tuple[utils.AverageMeter, utils.AverageMeter, utils.AverageMeter]:
     global val_example_ct, val_batch_ct
     batch_time = utils.AverageMeter("Time", ":6.3f")

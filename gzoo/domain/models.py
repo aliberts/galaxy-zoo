@@ -7,7 +7,7 @@ import torchvision.transforms as transforms
 import torchvision.transforms.functional as tf
 from torchvision import models
 
-from gzoo.infra.config import TrainConfig
+from gzoo.infra import config
 
 model_names = sorted(
     name
@@ -22,7 +22,7 @@ Model: TypeAlias = Union["ResNet", "CustomNet", "Random"]
 
 
 class ResNet(nn.Module):
-    def __init__(self, cfg: TrainConfig):
+    def __init__(self, cfg: config.TrainConfig):
         super().__init__()
         self.ensembling = False
         self.output_constraints = cfg.model.output_constraints
@@ -94,7 +94,7 @@ class ResNet(nn.Module):
 
 
 class CustomNet(nn.Module):
-    def __init__(self, cfg: TrainConfig):
+    def __init__(self, cfg: config.TrainConfig):
         super().__init__()
         self.ensembling = False
         self.output_constraints = cfg.model.output_constraints
@@ -282,7 +282,7 @@ def rescale_anwsers(x: torch.Tensor) -> torch.Tensor:
 class Random(nn.Module):
     """Random predictor to benchmark against models."""
 
-    def __init__(self, cfg: TrainConfig):
+    def __init__(self, cfg: config.TrainConfig):
         super().__init__()
         if cfg.exp.task == "classification":
             self.n_classes = 5

@@ -14,17 +14,16 @@ from torch.utils.data.distributed import DistributedSampler
 from wandb.sdk.wandb_run import Run
 
 import wandb
-from gzoo.domain.model import CustomNet, Model, Random, ResNet
-from gzoo.infra.config import ComputeConfig, DistributedConfig, PredictConfig, TrainConfig
-from gzoo.infra.data import GalaxyTrainSet
+from gzoo.domain import models
+from gzoo.infra import config, data
 
 Loss: TypeAlias = Union[nn.CrossEntropyLoss, "RMSELoss"]
 
 
 def setup_cuda(
-    model: Model,
-    cfg: TrainConfig | PredictConfig,
-) -> tuple[Model, ComputeConfig]:
+    model: models.Model,
+    cfg: config.TrainConfig | config.PredictConfig,
+) -> tuple[models.Model, config.ComputeConfig]:
     if not torch.cuda.is_available():
         print("using CPU, this will be slow")
     elif cfg.distributed.use:
@@ -65,7 +64,9 @@ def setup_cuda(
     return model, cfg.compute
 
 
-def setup_distributed(gpu: int | None, dist_cfg: DistributedConfig) -> DistributedConfig:
+def setup_distributed(
+    gpu: int | None, dist_cfg: config.DistributedConfig
+) -> config.DistributedConfig:
     if dist_cfg.gpu is not None:
         logging.info(f"Use GPU: {dist_cfg.gpu}")
 
@@ -85,19 +86,19 @@ def setup_distributed(gpu: int | None, dist_cfg: DistributedConfig) -> Distribut
     return dist_cfg
 
 
-def create_model(cfg: TrainConfig | PredictConfig) -> Model:
+def create_model(cfg: config.TrainConfig | config.PredictConfig) -> models.Model:
     if cfg.model.arch.startswith("resnet"):
-        model = ResNet(cfg)
+        model = models.ResNet(cfg)
     elif cfg.model.arch.startswith("custom"):
-        model = CustomNet(cfg)
+        model = models.CustomNet(cfg)
     elif cfg.model.arch == "random":
-        model = Random(cfg)
+        model = models.Random(cfg)
     else:
         raise NotImplementedError
     return model
 
 
-def load_model(cfg: TrainConfig, model: Model) -> Model:
+def load_model(cfg: config.TrainConfig, model: models.Model) -> models.Model:
     if cfg.model.path:
         pth = cfg.model.path
     else:
@@ -122,17 +123,15 @@ def load_model(cfg: TrainConfig, model: Model) -> Model:
 
 
 def make_train_dataset(
-    cfg: TrainConfig, run: Run | None
+    cfg: config.TrainConfig, run: Run | None
 ) -> tuple[DataLoader, DataLoader, DistributedSampler | None]:
-
     dataset_dir = cfg.dataset.clf
     if run is not None:
-        # TODO: get proper artifact name/version
         dataset_artifact = run.use_artifact(f"clf_train_val:{cfg.dataset.version}")
         dataset_dir = Path(dataset_artifact.download())
 
-    train_dataset = GalaxyTrainSet(dataset_dir, "train", cfg.dataset, cfg.preprocess)
-    val_dataset = GalaxyTrainSet(dataset_dir, "val", cfg.dataset, cfg.preprocess)
+    train_dataset = data.GalaxyTrainSet(dataset_dir, "train", cfg.dataset, cfg.preprocess)
+    val_dataset = data.GalaxyTrainSet(dataset_dir, "val", cfg.dataset, cfg.preprocess)
 
     if cfg.distributed.use:
         train_sampler = DistributedSampler(train_dataset)
@@ -159,13 +158,13 @@ def make_train_dataset(
     return train_loader, val_loader, train_sampler
 
 
-def make_test_dataset(cfg: PredictConfig, run: Run | None) -> DataLoader:
+def make_test_dataset(cfg: config.PredictConfig, run: Run | None) -> DataLoader:
     dataset_dir = cfg.dataset.clf
     if run is not None:
         dataset_artifact = run.use_artifact(f"clf_test:{cfg.dataset.version}")
         dataset_dir = Path(dataset_artifact.download())
 
-    test_dataset = GalaxyTrainSet(dataset_dir, "test", cfg.dataset, cfg.preprocess)
+    test_dataset = data.GalaxyTrainSet(dataset_dir, "test", cfg.dataset, cfg.preprocess)
     test_loader = DataLoader(
         test_dataset,
         batch_size=cfg.compute.batch_size,
@@ -176,9 +175,9 @@ def make_test_dataset(cfg: PredictConfig, run: Run | None) -> DataLoader:
     return test_loader
 
 
-def make_criterion(cfg: TrainConfig | PredictConfig) -> Loss:
+def make_criterion(cfg: config.TrainConfig | config.PredictConfig) -> Loss:
     if cfg.exp.task == "classification":
-        if isinstance(cfg, TrainConfig):
+        if isinstance(cfg, config.TrainConfig):
             # https://discuss.pytorch.org/t/11455/10
             n_samples = [8014, 7665, 550, 3708, 7416]
             # weights = [max(n_samples) / x for x in n_samples]
@@ -192,7 +191,7 @@ def make_criterion(cfg: TrainConfig | PredictConfig) -> Loss:
     return criterion
 
 
-def make_optimizer(cfg: TrainConfig, model: Model) -> Optimizer:
+def make_optimizer(cfg: config.TrainConfig, model: models.Model) -> Optimizer:
     if cfg.model.arch == "random":
         optimizer = None
     elif cfg.optimizer.name == "adam":
@@ -208,7 +207,7 @@ def make_optimizer(cfg: TrainConfig, model: Model) -> Optimizer:
 
 
 def save_checkpoint(
-    log_dir: Path, state: dict, model: Model, is_best: bool, cfg: TrainConfig
+    log_dir: Path, state: dict, model: models.Model, is_best: bool, cfg: config.TrainConfig
 ) -> None:
     file_path = log_dir / "checkpoint.pth.tar"
     torch.save(state, file_path)
@@ -225,8 +224,8 @@ def save_checkpoint(
 
 
 def resume_from_checkpoint(
-    cfg: TrainConfig, model: Model, optimizer: Optimizer
-) -> tuple[Model, Optimizer]:
+    cfg: config.TrainConfig, model: models.Model, optimizer: Optimizer
+) -> tuple[models.Model, Optimizer]:
     if not cfg.compute.resume.is_file(cfg.compute.resume):
         raise FileNotFoundError(f"=> no checkpoint found at '{cfg.compute.resume}'")
 

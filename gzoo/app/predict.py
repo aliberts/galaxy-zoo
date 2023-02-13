@@ -12,14 +12,13 @@ import torch.utils.data.distributed
 from torch.utils.data import DataLoader
 
 from gzoo.domain import pipeline
-from gzoo.domain.model import Model
+from gzoo.domain.models import Model
 from gzoo.infra.config import PredictConfig
 from gzoo.infra.utils import AverageMeter, ProgressMeter
 
 
 @pyrallis.wrap(config_path="config/predict.yaml")
 def main(cfg: PredictConfig) -> None:
-
     if cfg.distributed.multiprocessing_distributed:
         # Since we have ngpus_per_node processes per node, the total world_size
         # needs to be adjusted accordingly
@@ -37,7 +36,6 @@ def main(cfg: PredictConfig) -> None:
 
 
 def main_worker(gpu: int | None, cfg: PredictConfig) -> None:
-
     cfg.distributed.gpu = gpu
     cfg.distributed = pipeline.setup_distributed(gpu, cfg.distributed)
 

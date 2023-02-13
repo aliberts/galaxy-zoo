@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from gzoo.infra.config import ExpConfig
+from gzoo.infra import config
 
 
 class Log:
@@ -10,7 +10,7 @@ class Log:
 
     Args:
         task (str): recorded task.
-        exp (ExpConfig): experiment config.
+        exp (config.ExpConfig): experiment config.
         model_name (str): model architecture.
         level (_type_, optional): logging level. Defaults to logging.DEBUG.
 
@@ -18,7 +18,9 @@ class Log:
         toggle: toggles logging
     """
 
-    def __init__(self, step: str, exp: ExpConfig, model_name: str, level: int = logging.DEBUG):
+    def __init__(
+        self, step: str, exp: config.ExpConfig, model_name: str, level: int = logging.DEBUG
+    ):
         self.task = step + "_" + exp.task
         self.exp_name = exp.name
         self.model_name = model_name

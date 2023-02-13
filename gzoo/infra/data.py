@@ -9,10 +9,7 @@ from torch.utils.data import Dataset
 from torchvision.transforms.transforms import Compose
 from tqdm import tqdm
 
-from gzoo.infra import utils
-from gzoo.infra.config import DatasetConfig, PreprocessConfig
-
-# from torchvision.utils import save_image
+from gzoo.infra import config, utils
 
 
 class GalaxyTrainSet(Dataset):
@@ -23,8 +20,8 @@ class GalaxyTrainSet(Dataset):
         dir (Path): Path to the root directory of the dataset
             (containing the image folders and labels files).
         split (str): Partition to select ("train", "val" or "test").
-        data_cfg (DatasetConfig): Dataset config.
-        prepro_cfg (PreprocessConfig): Image preprocessing config.
+        data_cfg (config.DatasetConfig): Dataset config.
+        prepro_cfg (config.PreprocessConfig): Image preprocessing config.
 
     Returns (__getitem__):
         image (torch.Tensor)
@@ -32,7 +29,11 @@ class GalaxyTrainSet(Dataset):
     """
 
     def __init__(
-        self, dir: Path, split: str, data_cfg: DatasetConfig, prepro_cfg: PreprocessConfig
+        self,
+        dir: Path,
+        split: str,
+        data_cfg: config.DatasetConfig,
+        prepro_cfg: config.PreprocessConfig,
     ):
         super().__init__()
         if not data_cfg.dir.exists():
@@ -48,9 +49,7 @@ class GalaxyTrainSet(Dataset):
             labels_path = dir / data_cfg.clf_labels_test_file
             self.image_dir = dir / data_cfg.clf_images_test_dir
         else:
-            raise ValueError
-            "split must be either 'train', 'val' or 'test'."
-
+            raise ValueError("split must be either 'train', 'val' or 'test'.")
         try:
             labels_df = pd.read_csv(labels_path, header=0, sep=",", index_col="GalaxyID")
         except FileNotFoundError:
@@ -84,7 +83,7 @@ class GalaxyTrainSet(Dataset):
     def _get_class_number(self, class_name: str) -> int:
         return self.class_names.index(class_name)
 
-    def _build_transforms(self, cfg: PreprocessConfig) -> Compose:
+    def _build_transforms(self, cfg: config.PreprocessConfig) -> Compose:
         image_tf = []
         if self.split == "train" and cfg.augmentation:
             if cfg.rotate:

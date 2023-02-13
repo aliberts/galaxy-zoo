@@ -1,6 +1,6 @@
 import pyrallis
 
-from gzoo.infra.config import PredictConfig, TrainConfig
+from gzoo.infra import config
 
 
 def main() -> None:
@@ -9,8 +9,8 @@ def main() -> None:
     in gzoo.infra.config. This script should be run whenever changes in those
     classes have been made.
     """
-    train_cfg = TrainConfig()
-    predict_cfg = PredictConfig()
+    train_cfg = config.TrainConfig()
+    predict_cfg = config.PredictConfig()
     with open("config/train.yaml", "w") as train_f, open("config/predict.yaml", "w") as predict_f:
         pyrallis.dump(train_cfg, train_f)
         pyrallis.dump(predict_cfg, predict_f)
