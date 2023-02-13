@@ -157,5 +157,5 @@ poetry run python -m gzoo.app.predict --dataset.dir=example/
 # Config
 If you make changes in [gzoo.infra.config](gzoo/infra/config.py), you should also update the related `.yaml` config files in [config/](config/) with:
 ```bash
-poetry run python -m gzoo.app.update_config
+make config
 ```
