@@ -16,7 +16,7 @@ from wandb.sdk.wandb_run import Run
 import wandb
 from gzoo.domain.model import CustomNet, Model, Random, ResNet
 from gzoo.infra.config import ComputeConfig, DistributedConfig, PredictConfig, TrainConfig
-from gzoo.infra.data import GalaxyPredictSet, GalaxyTrainSet
+from gzoo.infra.data import GalaxyTrainSet
 
 Loss: TypeAlias = Union[nn.CrossEntropyLoss, "RMSELoss"]
 
@@ -125,13 +125,14 @@ def make_train_dataset(
     cfg: TrainConfig, run: Run | None
 ) -> tuple[DataLoader, DataLoader, DistributedSampler | None]:
 
-    dataset_dir = cfg.dataset.dir
+    dataset_dir = cfg.dataset.clf
     if run is not None:
-        dataset_artifact = run.use_artifact(f"{cfg.dataset.clf_name}:{cfg.dataset.version}")
+        # TODO: get proper artifact name/version
+        dataset_artifact = run.use_artifact(f"clf_train_val:{cfg.dataset.version}")
         dataset_dir = Path(dataset_artifact.download())
 
-    train_dataset = GalaxyTrainSet("train", cfg.dataset, cfg.preprocess, dataset_dir)
-    val_dataset = GalaxyTrainSet("val", cfg.dataset, cfg.preprocess, dataset_dir)
+    train_dataset = GalaxyTrainSet(dataset_dir, "train", cfg.dataset, cfg.preprocess)
+    val_dataset = GalaxyTrainSet(dataset_dir, "val", cfg.dataset, cfg.preprocess)
 
     if cfg.distributed.use:
         train_sampler = DistributedSampler(train_dataset)
@@ -158,8 +159,13 @@ def make_train_dataset(
     return train_loader, val_loader, train_sampler
 
 
-def make_test_dataset(cfg: PredictConfig) -> DataLoader:
-    test_dataset = GalaxyPredictSet(cfg.dataset)
+def make_test_dataset(cfg: PredictConfig, run: Run | None) -> DataLoader:
+    dataset_dir = cfg.dataset.clf
+    if run is not None:
+        dataset_artifact = run.use_artifact(f"clf_test:{cfg.dataset.version}")
+        dataset_dir = Path(dataset_artifact.download())
+
+    test_dataset = GalaxyTrainSet(dataset_dir, "test", cfg.dataset, cfg.preprocess)
     test_loader = DataLoader(
         test_dataset,
         batch_size=cfg.compute.batch_size,

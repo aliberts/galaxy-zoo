@@ -23,8 +23,7 @@ import wandb
 from gzoo.domain import pipeline
 from gzoo.domain.model import Model
 from gzoo.domain.pipeline import Loss
-from gzoo.infra.config import TrainConfig
-from gzoo.infra.utils import AverageMeter, ProgressMeter, setup_train_log, setup_wandb_run
+from gzoo.infra import config, utils
 
 NB_CLASSES = 5
 
@@ -36,13 +35,13 @@ val_batch_ct = 0
 
 
 @pyrallis.wrap(config_path="config/train.yaml")
-def main(cfg: TrainConfig) -> None:
+def main(cfg: config.TrainConfig) -> None:
 
     run = None
     if cfg.wandb.use:
-        run = setup_wandb_run(cfg)
+        run = utils.setup_wandb_training_run(cfg)
 
-    log = setup_train_log(cfg)
+    log = utils.setup_train_log(cfg)
 
     if cfg.distributed.multiprocessing_distributed:
         # Since we have ngpus_per_node processes per node, the total world_size
@@ -60,7 +59,7 @@ def main(cfg: TrainConfig) -> None:
         main_worker(cfg.distributed.gpu, cfg, log.dir, run)
 
 
-def main_worker(gpu: int | None, cfg: TrainConfig, log_dir: Path, run: Run | None) -> None:
+def main_worker(gpu: int | None, cfg: config.TrainConfig, log_dir: Path, run: Run | None) -> None:
 
     cfg.distributed.gpu = gpu
     cfg.distributed = pipeline.setup_distributed(gpu, cfg.distributed)
@@ -109,7 +108,7 @@ def train_loop(
     criterion: Loss,
     optimizer: Optimizer,
     epoch: int,
-    cfg: TrainConfig,
+    cfg: config.TrainConfig,
     log_dir: Path,
     run: Run | None,
 ) -> None:
@@ -125,10 +124,7 @@ def train_loop(
     )
 
     # Evaluate on validation set
-    val_loss, val_acc1, val_acc3 = validate(val_loader, model, criterion, cfg)
-    # val_loss, val_acc1, val_acc3, val_truth, val_pred = validate(
-    #     val_loader, model, criterion, cfg
-    # )
+    val_loss, val_acc1, val_acc3, val_truth, val_pred = validate(val_loader, model, criterion, cfg)
 
     # Remember best score and save checkpoint
     score = val_acc1
@@ -148,12 +144,11 @@ def train_loop(
                 "train-acc3": train_acc3,
                 "val-acc1": val_acc1,
                 "val-acc3": val_acc3,
-                # "conf_mat": wandb.plot.confusion_matrix(
-                #     probs=None,
-                #     y_true=val_truth,
-                #     preds=val_pred,
-                #     class_names=cfg.wandb.class_names_test,
-                # ),
+                "conf_mat": wandb.plot.confusion_matrix(
+                    probs=val_pred.cpu().numpy(),
+                    y_true=val_truth.long().cpu().numpy(),
+                    class_names=cfg.dataset.class_names,
+                ),
             }
             metrics = {**metrics, **tmp}
         run.log(metrics)
@@ -188,18 +183,18 @@ def train(
     criterion: Loss,
     optimizer: Optimizer,
     epoch: int,
-    cfg: TrainConfig,
-) -> tuple[AverageMeter, AverageMeter, AverageMeter]:
+    cfg: config.TrainConfig,
+) -> tuple[utils.AverageMeter, utils.AverageMeter, utils.AverageMeter]:
     global train_example_ct, train_batch_ct
-    batch_time = AverageMeter("Time", ":6.3f")
-    data_time = AverageMeter("Data", ":6.3f")
-    losses = AverageMeter("Loss", ":.4e")
+    batch_time = utils.AverageMeter("Time", ":6.3f")
+    data_time = utils.AverageMeter("Data", ":6.3f")
+    losses = utils.AverageMeter("Loss", ":.4e")
     metrics = [batch_time, data_time, losses]
     if cfg.exp.task == "classification":
-        top1 = AverageMeter("Acc@1", ":6.2f")
-        top3 = AverageMeter("Acc@3", ":6.2f")
+        top1 = utils.AverageMeter("Acc@1", ":6.2f")
+        top3 = utils.AverageMeter("Acc@3", ":6.2f")
         metrics.extend([top1, top3])
-    progress = ProgressMeter(len(train_loader), metrics, prefix=f"Epoch: [{epoch}]")
+    progress = utils.ProgressMeter(len(train_loader), metrics, prefix=f"Epoch: [{epoch}]")
 
     # Switch to train mode
     model.train()
@@ -261,18 +256,23 @@ def train(
 
 
 def validate(
-    val_loader: DataLoader, model: Model, criterion: Loss, cfg: TrainConfig
-) -> tuple[AverageMeter, AverageMeter, AverageMeter]:
+    val_loader: DataLoader, model: Model, criterion: Loss, cfg: config.TrainConfig
+) -> tuple[utils.AverageMeter, utils.AverageMeter, utils.AverageMeter]:
     global val_example_ct, val_batch_ct
-    batch_time = AverageMeter("Time", ":6.3f")
-    losses = AverageMeter("Loss", ":.4e")
+    batch_time = utils.AverageMeter("Time", ":6.3f")
+    losses = utils.AverageMeter("Loss", ":.4e")
     metrics = [batch_time, losses]
     if cfg.exp.task == "classification":
-        top1 = AverageMeter("Acc@1", ":6.2f")
-        top3 = AverageMeter("Acc@3", ":6.2f")
+        top1 = utils.AverageMeter("Acc@1", ":6.2f")
+        top3 = utils.AverageMeter("Acc@3", ":6.2f")
         metrics.extend([top1, top3])
-    progress = ProgressMeter(len(val_loader), metrics, prefix="Test:")
+    progress = utils.ProgressMeter(len(val_loader), metrics, prefix="Test:")
     confusion_matrix = torch.zeros(NB_CLASSES, NB_CLASSES)
+    val_pred = torch.Tensor()
+    val_truth = torch.Tensor()
+    if torch.cuda.is_available():
+        val_pred = val_pred.cuda(cfg.distributed.gpu, non_blocking=True)
+        val_truth = val_truth.cuda(cfg.distributed.gpu, non_blocking=True)
 
     # switch to evaluate mode
     model.eval()
@@ -299,7 +299,9 @@ def validate(
                 top1.update(acc1[0], images.size(0))
                 top3.update(acc3[0], images.size(0))
 
-            # confusion matrix
+            # confusion matrixes (wandb & offline)
+            val_pred = torch.cat((val_pred, output), 0)
+            val_truth = torch.cat((val_truth, target), 0)
             _, preds = torch.max(output, 1)
             for t, p in zip(target.view(-1), preds.view(-1)):
                 confusion_matrix[t.long(), p.long()] += 1
@@ -330,10 +332,13 @@ def validate(
     logging.info(f"\n{confusion_matrix}")
     logging.info(f"\n{confusion_matrix.diag()/confusion_matrix.sum(1)}")
 
-    return losses.avg, top1.avg, top3.avg
+    # num_classes = len(cfg.dataset.class_names)
+    # val_truth = F.one_hot(val_truth.long(), num_classes=num_classes)
+
+    return losses.avg, top1.avg, top3.avg, val_truth, val_pred
 
 
-def adjust_learning_rate(optimizer: Optimizer, epoch: int, cfg: TrainConfig) -> None:
+def adjust_learning_rate(optimizer: Optimizer, epoch: int, cfg: config.TrainConfig) -> None:
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     if optimizer is None:
         return
@@ -342,7 +347,7 @@ def adjust_learning_rate(optimizer: Optimizer, epoch: int, cfg: TrainConfig) -> 
         param_group["lr"] = lr
 
 
-def accuracy(output: torch.Tensor, target: torch.Tensor, topk=(1,)) -> list[float]:
+def accuracy(output: torch.Tensor, target: torch.Tensor, topk: tuple = (1,)) -> list[float]:
     """Computes the accuracy over the k top predictions for the specified values of k"""
     with torch.no_grad():
         maxk = max(topk)
@@ -359,7 +364,7 @@ def accuracy(output: torch.Tensor, target: torch.Tensor, topk=(1,)) -> list[floa
         return res
 
 
-def accuracy_reg(output: torch.Tensor, target: torch.Tensor, topk=(1,)) -> list[float]:
+def accuracy_reg(output: torch.Tensor, target: torch.Tensor, topk: tuple = (1,)) -> list[float]:
     """Computes the accuracy over the k top predictions for the specified values of k"""
     with torch.no_grad():
         batch_size = target.size(0)
