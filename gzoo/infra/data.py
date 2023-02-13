@@ -16,11 +16,15 @@ from gzoo.infra.config import DatasetConfig, PreprocessConfig
 
 
 class GalaxyTrainSet(Dataset):
-    """Train/Val/Test dataset.
+    """
+    Labeled dataset.
 
     Args:
-        split (str): "train", "val", "test"
-        cfg (namespace): options from config
+        dir (Path): Path to the root directory of the dataset
+            (containing the image folders and labels files).
+        split (str): Partition to select ("train", "val" or "test").
+        data_cfg (DatasetConfig): Dataset config.
+        prepro_cfg (PreprocessConfig): Image preprocessing config.
 
     Returns (__getitem__):
         image (torch.Tensor)
@@ -28,34 +32,52 @@ class GalaxyTrainSet(Dataset):
     """
 
     def __init__(
-        self, split: str, data_cfg: DatasetConfig, prepro_cfg: PreprocessConfig, dir: Path
+        self, dir: Path, split: str, data_cfg: DatasetConfig, prepro_cfg: PreprocessConfig
     ):
         super().__init__()
-        self.split = split
         if not data_cfg.dir.exists():
             raise FileNotFoundError(
                 "Dataset not found. Please run `make dataset` or download it from: "
                 "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/data"
             )
-        labels_split_path = dir / data_cfg.clf_labels_split_file
-        self.image_dir = dir / data_cfg.clf_images_dir.name
+
+        if split == "train" or split == "val":
+            labels_path = dir / data_cfg.clf_labels_train_val_file
+            self.image_dir = dir / data_cfg.clf_images_train_val_dir
+        elif split == "test":
+            labels_path = dir / data_cfg.clf_labels_test_file
+            self.image_dir = dir / data_cfg.clf_images_test_dir
+        else:
+            raise ValueError
+            "split must be either 'train', 'val' or 'test'."
 
         try:
-            labels_df = pd.read_csv(labels_split_path, header=0, sep=",", index_col="GalaxyID")
+            labels_df = pd.read_csv(labels_path, header=0, sep=",", index_col="GalaxyID")
         except FileNotFoundError:
             raise FileNotFoundError(
                 "Classification labels not found. "
                 "Run `poetry run python -m gzoo.app.make_labels` "
                 "and then `poetry run python -m gzoo.app.split_data` first."
             )
+
+        self.split = split
         self.class_names = data_cfg.class_names
-        self.indexes, self.labels = self._get_split(labels_df)
+        self.index_list, self.labels = self._make_index(labels_df)
+
+        if not self._validate_images_match_labels():
+            raise FileNotFoundError(
+                f"Some images in {self.image_dir} do not match with labels in {labels_path}"
+            )
+
         self.image_tf = self._build_transforms(prepro_cfg)
 
-    def _get_split(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def _validate_images_match_labels(self) -> bool:
+        return all(index.exists() for index in self.index_list)
+
+    def _make_index(self, df: pd.DataFrame) -> tuple[list[Path], list[int]]:
         df = df[df["Split"] == self.split]
         df = df.assign(**{"Label": df.loc[:, "Class"].apply(self._get_class_number)})
-        indexes = df.index.to_list()
+        indexes = [(self.image_dir / str(idx)).with_suffix(".jpg") for idx in df.index.to_list()]
         labels = df["Label"].to_list()
         return indexes, labels
 
@@ -93,30 +115,25 @@ class GalaxyTrainSet(Dataset):
         )
         return transforms.Compose(image_tf)
 
-    def __getitem__(self, idx: int) -> tuple[Image.Image, torch.tensor]:
-        image_id = self.indexes[idx]
-        path = self.image_dir / f"{image_id}.jpg"
-        image = utils.pil_loader(path)
-        # -- DEBUG --
-        # tens = transforms.ToTensor()
-        # save_image(tens(image), f'logs/{idx}_raw.png')
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.tensor]:
+        image_path = self.index_list[idx]
+        image = utils.pil_loader(image_path)
         image = self.image_tf(image)
-        # save_image(image, f'logs/{idx}_tf.png')
-        # breakpoint()
         label = self.labels[idx]
         label = torch.tensor(label).long()
         return image, label
 
     def __len__(self) -> int:
-        return len(self.indexes)
+        return len(self.index_list)
 
 
 class GalaxyRawSet(Dataset):
-    """Inference dataset.
+    """
+    Raw dataset (no labels).
 
     Args:
-        cfg (namespace): options from config
-        run: wandb run
+        dir (Path): Path to the directory containing the images.
+        types (list[str] | None, optional): Images extensions. If None, defaults to ".jpg".
 
     Returns (__getitem__):
         image (torch.Tensor)
@@ -134,10 +151,14 @@ class GalaxyRawSet(Dataset):
             types = [".jpg"]
 
         self.dir = dir
-        self.index_list = [f for type in types for f in dir.glob(f"*{type}")]
-        self.index_dict = {fname.stem: fname for fname in self.index_list}
+        self.index_list, self.index_dict = self._make_index(dir, types)
 
         self.image_tf = self._build_transforms()
+
+    def _make_index(self, dir: Path, types: list[str]) -> tuple[list[Path], dict[str:Path]]:
+        index_list = [f for type in types for f in dir.glob(f"*{type}")]
+        index_dict = {fname.stem: fname for fname in index_list}
+        return index_list, index_dict
 
     def _build_transforms(self) -> Compose:
         image_tf = []
@@ -166,10 +187,10 @@ class GalaxyRawSet(Dataset):
             shutil.copy(file_in, file_out)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
-        image_path = self.indexes[idx]
-        image_id = image_path.stem
+        image_path = self.index_list[idx]
         image = utils.pil_loader(image_path)
+        image_id = int(image_path.stem)
         return image, image_id
 
     def __len__(self) -> int:
-        return len(self.indexes)
+        return len(self.index_list)
