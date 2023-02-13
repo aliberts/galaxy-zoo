@@ -1,3 +1,5 @@
+.PHONY: dataset config
+
 setup-poetry:
 	curl -sSL https://install.python-poetry.org | python3 -
 dataset:
@@ -6,3 +8,5 @@ dataset:
 	  while [ "`find . -type f -name '*.zip' | wc -l`" -gt 0 ]; \
 	  do find -type f -name "*.zip" -exec unzip -- '{}' \; \
 	  -exec rm -- '{}' \;; done
+config:
+	poetry run python -m gzoo.app.update_config
